@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- Intel — BorderPane with split category/processing cards -->
+<BorderPane maxHeight="Infinity" maxWidth="Infinity"
+            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <center>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                    styleClass="task-page-scroll">
+            <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+                <!-- Main enable card -->
+                <VBox styleClass="content-card">
+                    <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-teal">
+                        <CheckBox fx:id="checkBoxIntel" mnemonicParsing="false"
+                                  style="-fx-font-weight: bold;" text="Enable Intel Runs" />
+                    </HBox>
+                    <VBox spacing="10" styleClass="task-section-inner">
+                        <Label styleClass="task-card-description"
+                               text="Choose the intel types to process and optional rally flag behavior."
+                               wrapText="true" />
+                    </VBox>
+                </VBox>
+
+                <!-- Categories and Processing as side-by-side cards -->
+                <HBox alignment="TOP_LEFT" spacing="14">
+
+                    <VBox styleClass="content-card" HBox.hgrow="ALWAYS">
+                        <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-blue">
+                            <Label text="Intel Categories" />
+                        </HBox>
+                        <VBox spacing="10" styleClass="task-section-inner">
+                            <CheckBox fx:id="checkBoxFireCrystalEra" mnemonicParsing="false"
+                                      text="Fire Crystal Era" />
+                            <CheckBox fx:id="checkBoxFireBeast" mnemonicParsing="false"
+                                      text="Fire Beast" />
+                            <CheckBox fx:id="checkBoxBeast" mnemonicParsing="false"
+                                      text="Beast" />
+                            <CheckBox fx:id="checkBoxSurvivors" mnemonicParsing="false"
+                                      text="Survivors" />
+                            <CheckBox fx:id="checkBoxJourney" mnemonicParsing="false"
+                                      text="Journey" />
+                        </VBox>
+                    </VBox>
+
+                    <VBox styleClass="content-card" HBox.hgrow="ALWAYS">
+                        <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-green">
+                            <Label text="Processing" />
+                        </HBox>
+                        <VBox spacing="10" styleClass="task-section-inner">
+                            <CheckBox fx:id="checkBoxSmartIntel" mnemonicParsing="false"
+                                      text="Use Smart Intel Processing" />
+                            <CheckBox fx:id="checkBoxRecallGatherTroops" mnemonicParsing="false"
+                                      text="Recall Gather Troops" />
+                            <CheckBox fx:id="checkBoxUseFlag" mnemonicParsing="false"
+                                      text="Use Beast Flag" />
+                            <HBox fx:id="hboxFlagSelection" alignment="CENTER_LEFT" spacing="12">
+                                <Label minWidth="92.0" styleClass="task-field-label" text="Flag" />
+                                <ComboBox fx:id="comboBoxBeastFlag" prefWidth="150.0" />
+                            </HBox>
+                        </VBox>
+                    </VBox>
+                </HBox>
+
+            </VBox>
+        </ScrollPane>
+    </center>
+</BorderPane>

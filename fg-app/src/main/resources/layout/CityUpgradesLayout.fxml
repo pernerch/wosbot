@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- City Upgrades — BorderPane root with VBox form rows instead of GridPane -->
+<BorderPane maxHeight="Infinity" maxWidth="Infinity"
+            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <center>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                    styleClass="task-page-scroll">
+            <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+                <VBox styleClass="content-card">
+                    <HBox styleClass="header-yellow" alignment="CENTER_LEFT" maxWidth="Infinity">
+                        <Label text="City Upgrades"
+                               style="-fx-text-fill: -fg-bg-app; -fx-font-weight: 700; -fx-font-size: 13px;" />
+                    </HBox>
+                    <VBox spacing="14" styleClass="task-section-inner">
+                        <Label text="Configure automated building upgrades safely"
+                               style="-fx-text-fill: -fg-text-secondary;" />
+                        <Separator style="-fx-opacity: 0.25;" />
+
+                        <!-- Furnace options -->
+                        <VBox spacing="10">
+                            <CheckBox fx:id="checkBoxUpgradeFurnace" mnemonicParsing="false"
+                                      text="Upgrade Furnace" />
+                            <CheckBox fx:id="checkBoxPrioritiseFurnace" mnemonicParsing="false"
+                                      text="Prioritise Furnace" />
+                        </VBox>
+
+                        <Separator style="-fx-opacity: 0.25;" />
+
+                        <!-- Survivors with offset -->
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <CheckBox fx:id="checkboxAcceptNewSurvivors" mnemonicParsing="false"
+                                      text="Accept new survivors" />
+                            <Region HBox.hgrow="ALWAYS" />
+                            <Label text="Offset Time:" styleClass="label-muted" />
+                            <TextField fx:id="textFieldSirvivorsOffset" prefWidth="80.0" />
+                        </HBox>
+                    </VBox>
+                </VBox>
+
+            </VBox>
+        </ScrollPane>
+    </center>
+</BorderPane>

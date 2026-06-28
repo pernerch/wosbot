@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- Alliance Mobilization — restructured from 4-column grid to FlowPane-based layout -->
+<BorderPane maxHeight="Infinity" maxWidth="Infinity"
+            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <center>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                    styleClass="task-page-scroll">
+            <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+                <!-- Enable toggle -->
+                <VBox styleClass="content-card">
+                    <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-green">
+                        <CheckBox fx:id="checkBoxAllianceMobilization" mnemonicParsing="false"
+                                  style="-fx-font-weight: bold;" text="Enable Alliance Mobilization" />
+                    </HBox>
+                    <VBox spacing="10" styleClass="task-section-inner">
+                        <Label styleClass="task-card-description"
+                               text="Automatically participate in alliance mobilization events"
+                               wrapText="true" />
+                    </VBox>
+                </VBox>
+
+                <!-- Mission types using FlowPane instead of GridPane 4-col -->
+                <VBox styleClass="content-card">
+                    <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-blue">
+                        <Label text="Mission Types" />
+                    </HBox>
+                    <VBox spacing="10" styleClass="task-section-inner">
+                        <Label styleClass="task-card-description"
+                               text="Select which mission types to automatically complete"
+                               wrapText="true" />
+                        <Separator style="-fx-opacity: 0.25;" />
+
+                        <FlowPane hgap="20" vgap="10" alignment="CENTER_LEFT">
+                            <CheckBox fx:id="gatherResourcesCheck" mnemonicParsing="false"
+                                      text="Gathering" />
+                            <CheckBox fx:id="defeatBeastsCheck" mnemonicParsing="false"
+                                      text="Beast Slaying" />
+                            <CheckBox fx:id="trainTroopsCheck" mnemonicParsing="false"
+                                      text="Training" />
+                            <CheckBox fx:id="buildSpeedupsCheck" mnemonicParsing="false"
+                                      text="Build Speedups" />
+                            <CheckBox fx:id="trainingSpeedupsCheck" mnemonicParsing="false"
+                                      text="Training Speedups" />
+                            <CheckBox fx:id="useSpeedupsCheck" mnemonicParsing="false"
+                                      text="Use Speedups" />
+                            <CheckBox fx:id="useGemsCheck" mnemonicParsing="false"
+                                      text="Use Gems" />
+                            <CheckBox fx:id="buyPackageCheck" mnemonicParsing="false"
+                                      text="Buy Package" />
+                            <CheckBox fx:id="chiefGearCharmCheck" mnemonicParsing="false"
+                                      text="Chief Gear Charm" />
+                            <CheckBox fx:id="chiefGearScoreCheck" mnemonicParsing="false"
+                                      text="Chief Gear Score" />
+                            <CheckBox fx:id="heroGearStoneCheck" mnemonicParsing="false"
+                                      text="Hero Gear Stone" />
+                            <CheckBox fx:id="mythicShardCheck" mnemonicParsing="false"
+                                      text="Mythic Shard" />
+                            <CheckBox fx:id="fireCrystalCheck" mnemonicParsing="false"
+                                      text="Fire Crystal" />
+                            <CheckBox fx:id="rallyCheck" mnemonicParsing="false"
+                                      text="Rally" />
+                            <CheckBox fx:id="autoAcceptCheck" mnemonicParsing="false"
+                                      text="Auto Accept" />
+                            <CheckBox fx:id="useGemsBottomCheck" mnemonicParsing="false"
+                                      text="Use Gems for Accept" />
+                        </FlowPane>
+                    </VBox>
+                </VBox>
+
+                <!-- Rally settings -->
+                <VBox styleClass="content-card">
+                    <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-red">
+                        <Label text="Configuration" />
+                    </HBox>
+                    <VBox spacing="10" styleClass="task-section-inner">
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Rewards %" minWidth="120" />
+                            <ComboBox fx:id="rewardsPercentageCombo" prefWidth="120.0" />
+                        </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Min Points (200)" minWidth="120" />
+                            <TextField fx:id="minimumPoints200Field" prefWidth="120.0" />
+                        </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Min Points (120)" minWidth="120" />
+                            <TextField fx:id="minimumPoints120Field" prefWidth="120.0" />
+                        </HBox>
+                    </VBox>
+                </VBox>
+
+            </VBox>
+        </ScrollPane>
+    </center>
+</BorderPane>

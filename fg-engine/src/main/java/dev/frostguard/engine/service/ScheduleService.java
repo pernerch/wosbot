@@ -1,0 +1,474 @@
+package dev.frostguard.engine.service;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.TpConfigEnum;
+import dev.frostguard.api.configs.TpDailyTaskEnum;
+import dev.frostguard.api.configs.TpMessageSeverityEnum;
+import dev.frostguard.api.domain.AccountDescriptor;
+import dev.frostguard.api.domain.BotStateData;
+import dev.frostguard.api.domain.DailyTaskStatusData;
+import dev.frostguard.api.domain.QueueStateData;
+import dev.frostguard.api.domain.TaskStateData;
+import dev.frostguard.data.entity.Config;
+import dev.frostguard.data.entity.ConfigTemplate;
+import dev.frostguard.data.entity.DailyTask;
+import dev.frostguard.data.entity.DailyTaskTemplate;
+import dev.frostguard.data.entity.Profile;
+import dev.frostguard.data.repository.ConfigRepository;
+import dev.frostguard.data.repository.DailyTaskRepository;
+import dev.frostguard.data.repository.ProfileRepository;
+import dev.frostguard.engine.emulator.EmulatorController;
+import dev.frostguard.engine.listener.BotStateListener;
+import dev.frostguard.engine.listener.QueueStateListener;
+import dev.frostguard.engine.schedule.DelayedTask;
+import dev.frostguard.engine.schedule.DelayedTaskRegistry;
+import dev.frostguard.engine.schedule.TaskDispatcher;
+import dev.frostguard.engine.schedule.TaskQueue;
+
+/**
+ * Coordinates emulator startup, profile queues, and persisted task schedules.
+ */
+public class ScheduleService {
+
+	private static final DateTimeFormatter DISPLAY_TIME = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
+	private static volatile ScheduleService singleton;
+
+	private final TaskDispatcher dispatcher = new TaskDispatcher();
+	private final CopyOnWriteArrayList<BotStateListener> botListeners = new CopyOnWriteArrayList<>();
+	private final CopyOnWriteArrayList<QueueStateListener> queueListeners = new CopyOnWriteArrayList<>();
+	private final DailyTaskRepository dailyTasks = DailyTaskRepository.getRepository();
+	private final ProfileRepository profiles = ProfileRepository.getRepository();
+	private final ConfigRepository configs = ConfigRepository.getRepository();
+
+	private ScheduleService() {
+	}
+
+	public static ScheduleService obtain() {
+		ScheduleService service = singleton;
+		if (service != null) {
+			return service;
+		}
+		synchronized (ScheduleService.class) {
+			if (singleton == null) {
+				singleton = new ScheduleService();
+			}
+			return singleton;
+		}
+	}
+
+	public void launchEngine() {
+		if (!initializeBridge()) {
+			notifyBotState(false, false);
+			return;
+		}
+
+		LinkedHashMap<String, String> globalConfig = ConfigService.obtain().loadGlobalSettings();
+		applyEmulatorPaths(globalConfig);
+
+		List<AccountDescriptor> accounts = ProfileService.obtain().fetchAllAccounts();
+		List<AccountDescriptor> enabled = enabledAccounts(accounts);
+		if (enabled.isEmpty()) {
+			log(TpMessageSeverityEnum.WARNING, "ScheduleService", "-", "No enabled profiles found");
+			return;
+		}
+
+		enabled.stream()
+				.sorted(Comparator.comparing(AccountDescriptor::getPriority).reversed())
+				.forEach(account -> prepareQueue(account, globalConfig));
+
+		dispatcher.startAll();
+		notifyQueueState(null, false);
+		trackStart(enabled, globalConfig);
+		notifyBotState(true, false);
+	}
+
+	public void addEngineObserver(BotStateListener observer) {
+		if (observer != null) {
+			botListeners.addIfAbsent(observer);
+		}
+	}
+
+	public void addQueueObserver(QueueStateListener observer) {
+		if (observer != null) {
+			queueListeners.addIfAbsent(observer);
+		}
+	}
+
+	public void haltEngine() {
+		dispatcher.stopAll();
+		try {
+			AnalyticsService.getInstance().trackBotStopped("manual");
+		} catch (Exception ignored) {
+		}
+		notifyBotState(false, false);
+		notifyQueueState(null, false);
+	}
+
+	public void suspendEngine() {
+		dispatcher.pauseAll();
+		notifyBotState(true, true);
+		notifyQueueState(null, true);
+	}
+
+	public void resumeEngine() {
+		dispatcher.resumeAll();
+		notifyBotState(true, false);
+		notifyQueueState(null, false);
+	}
+
+	public void suspendAccountQueue(Long accountId) {
+		changeAccountPause(accountId, true);
+	}
+
+	public void resumeAccountQueue(Long accountId) {
+		changeAccountPause(accountId, false);
+	}
+
+	public void persistDailyCompletion(AccountDescriptor acct, TpDailyTaskEnum taskType, LocalDateTime nextRun) {
+		persistDailyCompletion(acct, taskType, nextRun, null);
+	}
+
+	public void persistDailyCompletion(AccountDescriptor acct, TpDailyTaskEnum taskType,
+			LocalDateTime nextRun, String customLabel) {
+		if (acct == null || taskType == null) {
+			return;
+		}
+		DailyTask record = dailyTasks.findByAccountIdAndTaskType(acct.getId(), taskType);
+		if (record == null) {
+			dailyTasks.addDailyTask(newDailyRecord(acct, taskType, nextRun, customLabel));
+			return;
+		}
+		record.setPreviousRun(LocalDateTime.now());
+		record.setScheduledAt(nextRun);
+		dailyTasks.saveDailyTask(record);
+	}
+
+	public void evictTask(Long accountId, TpDailyTaskEnum taskType) {
+		evictTask(accountId, taskType, null);
+	}
+
+	public void evictTask(Long accountId, TpDailyTaskEnum taskType, String customLabel) {
+		if (accountId == null || taskType == null) {
+			return;
+		}
+		try {
+			boolean dequeued = removeFromQueue(accountId, taskType, customLabel);
+			log(TpMessageSeverityEnum.INFO, "ScheduleService", "Profile " + accountId,
+					"Removed " + taskType.getName() + " from queue: " + dequeued);
+			TaskManagementService.shared().recordTaskState(accountId, clearedState(accountId, taskType, customLabel));
+			notifyBotState(true, false);
+		} catch (Exception ex) {
+			log(TpMessageSeverityEnum.ERROR, "ScheduleService", "Profile " + accountId,
+					"Task removal failed for " + taskType.getName() + ": " + ex.getMessage());
+		}
+	}
+
+	public void persistEmulatorPath(String settingIdentifier, String path) {
+		Config row = findGlobalRow(settingIdentifier);
+		if (row == null) {
+			ConfigTemplate template = configs.getWatcherSetting(TpConfigEnum.GLOBAL_CONFIG);
+			Config created = new Config();
+			created.setIdentifier(settingIdentifier);
+			created.setContent(path);
+			created.setWatcherSetting(template);
+			configs.addSetting(created);
+			return;
+		}
+		row.setContent(path);
+		configs.saveSetting(row);
+	}
+
+	public TaskDispatcher getCoordinator() {
+		return dispatcher;
+	}
+
+	private boolean initializeBridge() {
+		try {
+			EmulatorController.getInstance().initialize();
+			return true;
+		} catch (Exception ex) {
+			log(TpMessageSeverityEnum.ERROR, "ScheduleService", "-",
+					"Engine launch aborted: " + ex.getMessage());
+			ex.printStackTrace();
+			return false;
+		}
+	}
+
+	private List<AccountDescriptor> enabledAccounts(List<AccountDescriptor> accounts) {
+		return accounts == null
+				? List.of()
+				: accounts.stream().filter(account -> Boolean.TRUE.equals(account.getEnabled())).collect(Collectors.toList());
+	}
+
+	private void prepareQueue(AccountDescriptor account, Map<String, String> globalConfig) {
+		account.setGlobalSettings(globalConfig instanceof HashMap
+				? (HashMap<String, String>) globalConfig
+				: new HashMap<>(globalConfig == null ? Map.of() : globalConfig));
+
+		dispatcher.registerAccount(account);
+		TaskQueue queue = dispatcher.getQueue(account.getId());
+		queue.enqueue(startupTaskFor(account));
+
+		List<DailyTaskStatusData> progress = safeProgress(account.getId());
+		Map<Integer, DailyTaskStatusData> progressByType = progress.stream()
+				.filter(row -> row != null)
+				.collect(Collectors.toMap(DailyTaskStatusData::getIdTpDailyTask, row -> row, (first, ignored) -> first));
+
+		configDrivenFactories(account).forEach((configKey, factories) -> {
+			if (Boolean.TRUE.equals(account.getConfig(configKey, Boolean.class))) {
+				factories.stream().map(Supplier::get).forEach(task -> enqueuePlannedTask(account, queue, task, progressByType));
+			}
+		});
+
+		addCustomTasks(account, queue, progress);
+	}
+
+	private DelayedTask startupTaskFor(AccountDescriptor account) {
+		if (Boolean.TRUE.equals(account.getConfig(ConfigurationKeyEnum.SKIP_TUTORIAL_ENABLED_BOOL, Boolean.class))) {
+			log(TpMessageSeverityEnum.INFO, "ScheduleService", account.getName(),
+					"Tutorial bypass enabled; standard initialization skipped");
+			return DelayedTaskRegistry.create(TpDailyTaskEnum.SKIP_TUTORIAL, account);
+		}
+		return DelayedTaskRegistry.create(TpDailyTaskEnum.INITIALIZE, account);
+	}
+
+	private EnumMap<ConfigurationKeyEnum, List<Supplier<DelayedTask>>> configDrivenFactories(AccountDescriptor account) {
+		return Stream.of(TpDailyTaskEnum.values())
+				.filter(type -> type.getConfigKey() != null)
+				.collect(Collectors.groupingBy(
+						TpDailyTaskEnum::getConfigKey,
+						() -> new EnumMap<>(ConfigurationKeyEnum.class),
+						Collectors.mapping(type -> (Supplier<DelayedTask>) () -> DelayedTaskRegistry.create(type, account),
+								Collectors.toList())));
+	}
+
+	private void enqueuePlannedTask(AccountDescriptor account, TaskQueue queue, DelayedTask task,
+			Map<Integer, DailyTaskStatusData> progressByType) {
+		TaskStateData state = baseScheduledState(account.getId(), task.getTpTask().getId(), null);
+		DailyTaskStatusData saved = progressByType.get(task.getTpDailyTaskId());
+		if (saved == null) {
+			scheduleFreshTask(task, account);
+			state.setNextExecutionTime(task.getScheduled());
+		} else {
+			task.reschedule(saved.getNextSchedule());
+			task.setLastExecutionTime(saved.getLastExecution());
+			state.setLastExecutionTime(saved.getLastExecution());
+			state.setNextExecutionTime(saved.getNextSchedule());
+			log(TpMessageSeverityEnum.INFO, task.getTaskName(), account.getName(),
+					"Schedule restored: " + formatTime(saved.getNextSchedule()));
+		}
+		TaskManagementService.shared().recordTaskState(account.getId(), state);
+		queue.enqueue(task);
+	}
+
+	private void scheduleFreshTask(DelayedTask task, AccountDescriptor account) {
+		if (task.getScheduled() == null) {
+			task.reschedule(LocalDateTime.now());
+			log(TpMessageSeverityEnum.INFO, task.getTaskName(), account.getName(), "Queued for immediate execution");
+		} else {
+			log(TpMessageSeverityEnum.INFO, task.getTaskName(), account.getName(),
+					"Initial schedule: " + formatTime(task.getScheduled()));
+		}
+	}
+
+	private void addCustomTasks(AccountDescriptor account, TaskQueue queue, List<DailyTaskStatusData> progress) {
+		CustomTaskService customTasks = CustomTaskService.getInstance();
+		var enabled = customTasks.getEnabledTasks();
+		log(TpMessageSeverityEnum.INFO, "ScheduleService", account.getName(),
+				"Custom tasks discovered: " + enabled.size());
+
+		for (CustomTaskService.CustomTaskSettings settings : enabled) {
+			DelayedTask task = customTasks.createTaskWithSettings(settings, account);
+			if (task == null) {
+				log(TpMessageSeverityEnum.ERROR, "ScheduleService", account.getName(),
+						"Custom task could not be created: " + settings.getCustomName());
+				continue;
+			}
+			restoreCustomSchedule(task, settings, account, progress);
+			task.setRecurring(true);
+			TaskManagementService.shared().recordTaskState(account.getId(),
+					baseScheduledState(account.getId(), TpDailyTaskEnum.CUSTOM_TASK.getId(), settings.getClassName(), task.getScheduled()));
+			queue.enqueue(task);
+			log(TpMessageSeverityEnum.INFO, settings.getCustomName(), account.getName(),
+					"Custom task queued (offset=" + settings.getOffsetMinutes() + "m, priority=" + settings.getPriority() + ")");
+		}
+	}
+
+	private void restoreCustomSchedule(DelayedTask task, CustomTaskService.CustomTaskSettings settings,
+			AccountDescriptor account, List<DailyTaskStatusData> progress) {
+		DailyTaskStatusData saved = progress.stream()
+				.filter(row -> row != null)
+				.filter(row -> row.getIdTpDailyTask() == TpDailyTaskEnum.CUSTOM_TASK.getId())
+				.filter(row -> settings.getClassName().equals(row.getCustomLabel()))
+				.findFirst()
+				.orElse(null);
+		if (saved == null || saved.getNextSchedule() == null) {
+			task.reschedule(LocalDateTime.now());
+			return;
+		}
+		task.reschedule(saved.getNextSchedule());
+		task.setLastExecutionTime(saved.getLastExecution());
+		log(TpMessageSeverityEnum.INFO, settings.getCustomName(), account.getName(),
+				"Schedule restored: " + formatTime(saved.getNextSchedule()));
+	}
+
+	private TaskStateData baseScheduledState(Long accountId, int taskTypeId, String customName) {
+		return baseScheduledState(accountId, taskTypeId, customName, null);
+	}
+
+	private TaskStateData baseScheduledState(Long accountId, int taskTypeId, String customName, LocalDateTime nextRun) {
+		TaskStateData state = new TaskStateData();
+		state.setProfileId(accountId);
+		state.setTaskId(taskTypeId);
+		state.setCustomTaskName(customName);
+		state.setExecuting(false);
+		state.setScheduled(true);
+		state.setNextExecutionTime(nextRun);
+		return state;
+	}
+
+	private void changeAccountPause(Long accountId, boolean paused) {
+		if (accountId == null) {
+			return;
+		}
+		if (paused) {
+			dispatcher.pauseAccount(accountId);
+		} else {
+			dispatcher.resumeAccount(accountId);
+		}
+		notifyQueueState(accountId, paused);
+	}
+
+	private DailyTask newDailyRecord(AccountDescriptor account, TpDailyTaskEnum taskType,
+			LocalDateTime nextRun, String customLabel) {
+		Profile profile = profiles.getAccountById(account.getId());
+		DailyTaskTemplate template = dailyTasks.findWatcherDailyTaskById(taskType.getId());
+		DailyTask record = new DailyTask();
+		record.setAccount(profile);
+		record.setDefinition(template);
+		record.setCustomTaskLabel(customLabel);
+		record.setPreviousRun(LocalDateTime.now());
+		record.setScheduledAt(nextRun);
+		return record;
+	}
+
+	private boolean removeFromQueue(Long accountId, TpDailyTaskEnum taskType, String customLabel) {
+		TaskQueue queue = dispatcher.getQueue(accountId);
+		if (queue == null) {
+			log(TpMessageSeverityEnum.WARNING, "ScheduleService", "Profile " + accountId,
+					"No queue found for " + taskType.getName());
+			return false;
+		}
+		return taskType == TpDailyTaskEnum.CUSTOM_TASK && customLabel != null
+				? queue.dequeueByKey(customLabel)
+				: queue.dequeue(taskType);
+	}
+
+	private TaskStateData clearedState(Long accountId, TpDailyTaskEnum taskType, String customLabel) {
+		TaskStateData state = new TaskStateData();
+		state.setProfileId(accountId);
+		state.setTaskId(taskType.getId());
+		state.setCustomTaskName(taskType == TpDailyTaskEnum.CUSTOM_TASK ? customLabel : null);
+		state.setScheduled(false);
+		state.setExecuting(false);
+		state.setLastExecutionTime(LocalDateTime.now());
+		state.setNextExecutionTime(null);
+		return state;
+	}
+
+	private Config findGlobalRow(String identifier) {
+		List<Config> rows = configs.getGlobalSettings();
+		if (rows == null) {
+			return null;
+		}
+		return rows.stream()
+				.filter(row -> row != null && row.getIdentifier() != null)
+				.filter(row -> row.getIdentifier().equals(identifier))
+				.findFirst()
+				.orElse(null);
+	}
+
+	private List<DailyTaskStatusData> safeProgress(Long accountId) {
+		List<DailyTaskStatusData> progress = dailyTasks.findDailyTaskStatusByAccount(accountId);
+		return progress == null ? List.of() : progress;
+	}
+
+	private void notifyBotState(boolean running, boolean paused) {
+		BotStateData state = new BotStateData();
+		state.setRunning(running);
+		state.setPaused(paused);
+		state.setActionTime(LocalDateTime.now());
+		botListeners.forEach(listener -> listener.onEngineStateTransition(state));
+	}
+
+	private void notifyQueueState(Long accountId, boolean paused) {
+		if (queueListeners.isEmpty()) {
+			return;
+		}
+		QueueStateData state = new QueueStateData(accountId, paused, dispatcher.getActiveQueueStates());
+		queueListeners.forEach(listener -> listener.onQueueStateChanged(state));
+	}
+
+	private void applyEmulatorPaths(Map<String, String> globalConfig) {
+		if (globalConfig == null) {
+			return;
+		}
+		Set<String> pathKeys = Set.of(
+				ConfigurationKeyEnum.MUMU_PATH_STRING.name(),
+				ConfigurationKeyEnum.LDPLAYER_PATH_STRING.name(),
+				ConfigurationKeyEnum.MEMU_PATH_STRING.name());
+		globalConfig.entrySet().stream()
+				.filter(entry -> pathKeys.contains(entry.getKey()))
+				.forEach(entry -> persistEmulatorPath(entry.getKey(), entry.getValue()));
+	}
+
+	private void trackStart(List<AccountDescriptor> enabledAccounts, Map<String, String> globalConfig) {
+		try {
+			Set<String> activeTaskNames = new LinkedHashSet<>();
+			for (AccountDescriptor account : enabledAccounts) {
+				for (DailyTaskStatusData progress : safeProgress(account.getId())) {
+					if (progress == null) {
+						continue;
+					}
+					TpDailyTaskEnum taskType = TpDailyTaskEnum.fromId(progress.getIdTpDailyTask());
+					if (taskType != null && taskType.getConfigKey() != null
+							&& Boolean.TRUE.equals(account.getConfig(taskType.getConfigKey(), Boolean.class))) {
+						activeTaskNames.add(taskType.getName());
+					}
+				}
+			}
+			String emulator = globalConfig == null
+					? "unknown"
+					: globalConfig.getOrDefault(ConfigurationKeyEnum.CURRENT_EMULATOR_STRING.name(), "unknown");
+			AnalyticsService.getInstance().trackBotStarted(new ArrayList<>(activeTaskNames), enabledAccounts.size(), emulator);
+			AnalyticsService.getInstance().trackEmulatorConnected(emulator);
+			AnalyticsService.getInstance().trackProfileCount(enabledAccounts.size());
+		} catch (Exception ignored) {
+		}
+	}
+
+	private String formatTime(LocalDateTime time) {
+		return time == null ? "immediately" : time.format(DISPLAY_TIME);
+	}
+
+	private void log(TpMessageSeverityEnum severity, String source, String profileName, String message) {
+		LoggingService.obtain().emit(severity, source, profileName, message);
+	}
+
+}

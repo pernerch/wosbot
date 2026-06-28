@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- Character management — StackPane root with FlowPane-based sections -->
+<StackPane maxHeight="Infinity" maxWidth="Infinity"
+           HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+           xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                styleClass="task-page-scroll">
+        <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+            <!-- Character Gear section -->
+            <VBox styleClass="content-card">
+                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-yellow">
+                    <Label text="Character Creation" />
+                </HBox>
+                <VBox spacing="10" styleClass="task-section-inner">
+                    <Label styleClass="task-card-description"
+                           text="Automatically create and manage new characters"
+                           wrapText="true" />
+                    <Separator style="-fx-opacity: 0.25;" />
+
+                    <VBox spacing="10">
+                        <CheckBox fx:id="checkBoxEnableCreateCharacter" mnemonicParsing="false"
+                                  text="Enable Character Creation" />
+                        <CheckBox fx:id="checkBoxSkipTutorial" mnemonicParsing="false"
+                                  text="Skip Tutorial" />
+                        
+                        <Separator style="-fx-opacity: 0.25;" />
+                        
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Max Age (minutes)" minWidth="140" />
+                            <TextField fx:id="textFieldMaxAgeMinutes" prefWidth="120.0" />
+                        </HBox>
+                    </VBox>
+                </VBox>
+            </VBox>
+
+        </VBox>
+    </ScrollPane>
+</StackPane>

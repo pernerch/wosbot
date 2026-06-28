@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox maxHeight="Infinity" maxWidth="Infinity" HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+      xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1">
+    <children>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="task-page-scroll"
+                    vbarPolicy="AS_NEEDED" VBox.vgrow="ALWAYS">
+            <content>
+                <VBox maxHeight="Infinity" maxWidth="Infinity" styleClass="task-page-root" VBox.vgrow="ALWAYS">
+                    <children>
+                        <VBox styleClass="content-card">
+                            <children>
+                                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-orange">
+                                    <children>
+                                        <Label text="Alliance Workbench" />
+                                    </children>
+                                </HBox>
+                                <VBox styleClass="task-section-inner">
+                                    <children>
+                                        <Label styleClass="task-card-description"
+                                               text="Manage daily alliance collection, autojoin behavior, and help requests."
+                                               wrapText="true" />
+                                        <Separator style="-fx-opacity: 0.25;" />
+
+                                        <VBox spacing="10" styleClass="task-subsection">
+                                            <children>
+                                                <Label styleClass="task-subsection-title" text="Daily Claims" />
+                                                <HBox alignment="CENTER_LEFT" spacing="18">
+                                                    <children>
+                                                        <CheckBox fx:id="checkBoxTechContribution" mnemonicParsing="false" text="Tech contribution" HBox.hgrow="ALWAYS" />
+                                                        <Label styleClass="task-field-label" text="Offset" />
+                                                        <TextField fx:id="textfieldTechOffset" prefWidth="70" />
+                                                    </children>
+                                                </HBox>
+                                                <HBox alignment="CENTER_LEFT" spacing="18">
+                                                    <children>
+                                                        <CheckBox fx:id="checkBoxChests" mnemonicParsing="false" text="Claim chests" HBox.hgrow="ALWAYS" />
+                                                        <Label styleClass="task-field-label" text="Offset" />
+                                                        <TextField fx:id="textfieldChestOffset" prefWidth="70" />
+                                                    </children>
+                                                </HBox>
+                                                <CheckBox fx:id="checkBoxHonorChest" mnemonicParsing="false" text="Claim honor chest" />
+                                                <HBox alignment="CENTER_LEFT" spacing="18">
+                                                    <children>
+                                                        <CheckBox fx:id="checkBoxTriumph" mnemonicParsing="false" text="Claim Triumph" HBox.hgrow="ALWAYS" />
+                                                        <Label styleClass="task-field-label" text="Offset" />
+                                                        <TextField fx:id="textfieldTriumphOffset" prefWidth="70" />
+                                                    </children>
+                                                </HBox>
+                                                <HBox alignment="CENTER_LEFT" spacing="18">
+                                                    <children>
+                                                        <CheckBox fx:id="checkBoxAlliesEssence" mnemonicParsing="false" text="Claim allies essence" HBox.hgrow="ALWAYS" />
+                                                        <Label styleClass="task-field-label" text="Fail offset" />
+                                                        <TextField fx:id="textfieldAlliesEssenceOffsett" prefWidth="70" />
+                                                    </children>
+                                                </HBox>
+                                            </children>
+                                        </VBox>
+
+                                        <HBox spacing="18" alignment="TOP_LEFT">
+                                            <children>
+                                                <VBox spacing="10" styleClass="task-subsection" HBox.hgrow="ALWAYS">
+                                                    <children>
+                                                        <Label styleClass="task-subsection-title" text="Rally Autojoin" />
+                                                        <CheckBox fx:id="checkBoxAutojoin" mnemonicParsing="false" text="Enable Autojoin" />
+                                                        <HBox alignment="CENTER_LEFT" spacing="8">
+                                                            <children>
+                                                                <Label styleClass="task-field-label" text="Queues" />
+                                                                <ComboBox fx:id="comboBoxAutojoinQueues" prefWidth="90" />
+                                                            </children>
+                                                        </HBox>
+                                                    </children>
+                                                </VBox>
+
+                                                <VBox spacing="10" styleClass="task-subsection" HBox.hgrow="ALWAYS">
+                                                    <children>
+                                                        <Label styleClass="task-subsection-title" text="Troop Source" />
+                                                        <RadioButton fx:id="radioAllTroops" mnemonicParsing="false" text="All Troops" />
+                                                        <RadioButton fx:id="radioUseFormation" mnemonicParsing="false" text="Use Formation" />
+                                                        <Separator style="-fx-opacity: 0.25;" />
+                                                        <CheckBox fx:id="checkBoxHelpRequests" mnemonicParsing="false" text="Help alliance requests" />
+                                                    </children>
+                                                </VBox>
+                                            </children>
+                                        </HBox>
+                                    </children>
+                                </VBox>
+                            </children>
+                        </VBox>
+                    </children>
+                </VBox>
+            </content>
+        </ScrollPane>
+    </children>
+</VBox>

@@ -1,0 +1,54 @@
+package dev.frostguard.engine.nav;
+
+import dev.frostguard.api.domain.TesseractSettingsData;
+import dev.frostguard.api.domain.TesseractSettingsData.PageAnalysis;
+import dev.frostguard.api.domain.TesseractSettingsData.RecognitionEngine;
+
+import java.awt.Color;
+import java.util.regex.Pattern;
+
+// Shared Tesseract presets and regex helpers for OCR-based game-state readers.
+public final class CommonOCRSettings {
+
+    private CommonOCRSettings() {}
+
+    // stamina fraction: "123/500" style
+    public static final TesseractSettingsData STAMINA_FRACTION_SETTINGS =
+            buildLstmConfig("0123456789/", true, 255, 255, 255, PageAnalysis.SINGLE_LINE);
+
+    // spent stamina: digits only, near-white foreground
+    public static final TesseractSettingsData SPENT_STAMINA_SETTINGS =
+            buildSpentStaminaConfig();
+
+    // travel time: "12:34:56" style
+    public static final TesseractSettingsData TRAVEL_TIME_SETTINGS =
+            TesseractSettingsData.builder()
+                    .pageAnalysis(PageAnalysis.SINGLE_LINE)
+                    .recognitionEngine(RecognitionEngine.LSTM_ONLY)
+                    .allowedGlyphs("0123456789:")
+                    .build();
+
+    // extraction pattern for pulling first integer from noisy OCR text
+    public static final Pattern NUMBER_PATTERN = Pattern.compile(".*?(\\d+).*");
+
+    private static TesseractSettingsData buildLstmConfig(String glyphs, boolean isolate,
+                                                          int r, int g, int b,
+                                                          PageAnalysis pageMode) {
+        TesseractSettingsData.Configurator builder = TesseractSettingsData.builder()
+                .allowedGlyphs(glyphs)
+                .pageAnalysis(pageMode)
+                .recognitionEngine(RecognitionEngine.LSTM_ONLY);
+        if (isolate) builder.isolateForeground(true).targetColor(new Color(r, g, b));
+        return builder.build();
+    }
+
+    private static TesseractSettingsData buildSpentStaminaConfig() {
+        return TesseractSettingsData.builder()
+                .pageAnalysis(PageAnalysis.SINGLE_LINE)
+                .recognitionEngine(RecognitionEngine.LSTM_ONLY)
+                .isolateForeground(true)
+                .targetColor(new Color(254, 254, 254))
+                .allowedGlyphs("0123456789")
+                .build();
+    }
+}

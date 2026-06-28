@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox maxHeight="Infinity" maxWidth="Infinity"
+      HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+      xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1">
+    <children>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="task-page-scroll"
+                    vbarPolicy="AS_NEEDED" VBox.vgrow="ALWAYS">
+            <content>
+                <VBox styleClass="task-page-root" maxHeight="Infinity"
+                      maxWidth="Infinity">
+                    <children>
+
+                        <!-- Telegram Bot Configuration Card -->
+                        <VBox styleClass="content-card">
+                            <children>
+                                <HBox alignment="CENTER_LEFT" maxWidth="Infinity"
+                                      styleClass="header-blue">
+                                    <children>
+                                        <CheckBox fx:id="checkBoxEnabled"
+                                                  style="-fx-font-weight: bold; -fx-text-fill: white;"
+                                                  text="Enable Telegram Remote Control" />
+                                    </children>
+                                </HBox>
+                                <VBox styleClass="task-section-inner">
+                                    <children>
+                                        <Label styleClass="task-card-description"
+                                               text="Control the bot remotely via Telegram commands. Requires a bot token from @BotFather."
+                                               wrapText="true" />
+                                        <Separator style="-fx-opacity: 0.25;" />
+
+                                        <HBox alignment="CENTER_LEFT" spacing="10">
+                                            <children>
+                                                <Label styleClass="task-field-label" minWidth="120.0" text="Bot Token" />
+                                                <PasswordField fx:id="passwordFieldToken" HBox.hgrow="ALWAYS"
+                                                               maxWidth="Infinity"
+                                                               promptText="Paste your token from @BotFather" />
+                                                <TextField fx:id="textFieldTokenVisible" HBox.hgrow="ALWAYS"
+                                                           maxWidth="Infinity"
+                                                           promptText="Paste your token from @BotFather" />
+                                            </children>
+                                        </HBox>
+
+                                        <HBox alignment="CENTER_LEFT" spacing="10">
+                                            <children>
+                                                <HBox minWidth="120.0" />
+                                                <CheckBox fx:id="checkBoxShowToken"
+                                                          styleClass="label-muted"
+                                                          text="Show token" />
+                                            </children>
+                                        </HBox>
+
+                                        <Separator style="-fx-opacity: 0.25;" />
+
+                                        <HBox alignment="CENTER_LEFT" spacing="10">
+                                            <children>
+                                                <Label styleClass="task-field-label" minWidth="120.0" text="Allowed Chat ID" />
+                                                <TextField fx:id="textFieldChatId" maxWidth="200.0" promptText="e.g. 123456789" />
+                                                <Label styleClass="label-muted"
+                                                       text="Send /start to @userinfobot to get your Chat ID" />
+                                            </children>
+                                        </HBox>
+
+                                        <Separator style="-fx-opacity: 0.25;" />
+
+                                        <HBox alignment="CENTER_LEFT" spacing="10">
+                                            <children>
+                                                <Label styleClass="task-field-label" minWidth="120.0" text="Bot JAR Path" />
+                                                <TextField fx:id="textFieldBotJarPath" HBox.hgrow="ALWAYS"
+                                                           maxWidth="Infinity"
+                                                           promptText="Auto-detected – or browse to override" />
+                                                <Button fx:id="buttonBrowseJar" onAction="#handleBrowseJar"
+                                                        minWidth="30.0" text="..." />
+                                            </children>
+                                        </HBox>
+                                        <Label styleClass="label-muted"
+                                               style="-fx-font-size: 11; -fx-padding: 0 0 0 130;"
+                                               text="Auto-detected from running JAR. Use browse (...) only if the path is wrong." />
+
+                                        <Separator style="-fx-opacity: 0.25;" />
+
+                                        <CheckBox fx:id="checkBoxAutoStart" onAction="#handleAutoStartToggle"
+                                                  text="Auto-start watcher at Windows login" />
+
+                                        <Separator style="-fx-opacity: 0.25;" />
+
+                                        <HBox spacing="20" alignment="CENTER_LEFT">
+                                            <children>
+                                                <Label fx:id="labelStatus" style="-fx-text-fill: #e57373;" text="Status: 🔴 Stopped" />
+                                                <Label fx:id="labelStartupStatus" style="-fx-text-fill: #e57373;" text="Auto-start: ❌ Not registered" />
+                                            </children>
+                                        </HBox>
+
+                                        <Separator style="-fx-opacity: 0.25;" />
+
+                                        <HBox alignment="CENTER_RIGHT" spacing="8">
+                                            <children>
+                                                <Button fx:id="buttonTest" onAction="#handleTest" text="Test Connection" />
+                                                <Button fx:id="buttonSave" onAction="#handleSave"
+                                                        styleClass="action-button-timeline" text="Save Configuration" />
+                                            </children>
+                                        </HBox>
+                                    </children>
+                                </VBox>
+                            </children>
+                        </VBox>
+
+                        <!-- Command Reference Card -->
+                        <VBox styleClass="content-card">
+                            <children>
+                                <HBox alignment="CENTER_LEFT" maxWidth="Infinity"
+                                      styleClass="header-green">
+                                    <children>
+                                        <Label text="Commands Reference" />
+                                    </children>
+                                </HBox>
+                                <VBox styleClass="task-section-inner">
+                                    <children>
+                                        <!-- Quick Start tip -->
+                                        <VBox styleClass="task-subsection">
+                                            <children>
+                                                <HBox alignment="CENTER_LEFT" spacing="8">
+                                                    <children>
+                                                        <Label style="-fx-text-fill: #aed581; -fx-font-size: 12; -fx-font-weight: bold;" text="💡 Quick start:" />
+                                                        <Label styleClass="label-muted" text="Send  /launch  →  wait a few seconds  →  /startbot" wrapText="true" />
+                                                    </children>
+                                                </HBox>
+                                            </children>
+                                        </VBox>
+
+                                        <!-- When bot is closed -->
+                                        <VBox spacing="8">
+                                            <children>
+                                                <Label style="-fx-text-fill: #90caf9; -fx-font-size: 11; -fx-font-weight: bold;" text="When the bot app is closed" />
+                                                <VBox styleClass="task-subsection">
+                                                    <children>
+                                                        <HBox spacing="0">
+                                                            <children>
+                                                                <Label minWidth="100" style="-fx-text-fill: #81c784; -fx-font-weight: bold;" text="/launch" />
+                                                                <Label styleClass="label-muted" text="Opens the bot app remotely" wrapText="true" />
+                                                            </children>
+                                                        </HBox>
+                                                        <HBox spacing="0">
+                                                            <children>
+                                                                <Label minWidth="100" style="-fx-text-fill: #ef9a9a; -fx-font-weight: bold;" text="/kill" />
+                                                                <Label styleClass="label-muted" text="Shuts the bot app down" wrapText="true" />
+                                                            </children>
+                                                        </HBox>
+                                                        <HBox spacing="0">
+                                                            <children>
+                                                                <Label minWidth="100" style="-fx-text-fill: #ffcc80; -fx-font-weight: bold;" text="/wstatus" />
+                                                                <Label styleClass="label-muted" text="Is the bot app open right now?" wrapText="true" />
+                                                            </children>
+                                                        </HBox>
+                                                    </children>
+                                                </VBox>
+                                            </children>
+                                        </VBox>
+
+                                        <!-- When bot is open -->
+                                        <VBox spacing="8">
+                                            <children>
+                                                <Label style="-fx-text-fill: #90caf9; -fx-font-size: 11; -fx-font-weight: bold;" text="When the bot app is open" />
+                                                <VBox styleClass="task-subsection">
+                                                    <children>
+                                                        <HBox spacing="0">
+                                                            <children>
+                                                                <Label minWidth="100" style="-fx-text-fill: #81c784; -fx-font-weight: bold;" text="/startbot" />
+                                                                <Label styleClass="label-muted" text="Start the automation" wrapText="true" />
+                                                            </children>
+                                                        </HBox>
+                                                        <HBox spacing="0">
+                                                            <children>
+                                                                <Label minWidth="100" style="-fx-text-fill: #ef9a9a; -fx-font-weight: bold;" text="/stopbot" />
+                                                                <Label styleClass="label-muted" text="Pause the automation" wrapText="true" />
+                                                            </children>
+                                                        </HBox>
+                                                        <HBox spacing="0">
+                                                            <children>
+                                                                <Label minWidth="100" style="-fx-text-fill: #ffcc80; -fx-font-weight: bold;" text="/status" />
+                                                                <Label styleClass="label-muted" text="Is automation running?" wrapText="true" />
+                                                            </children>
+                                                        </HBox>
+                                                        <HBox spacing="0">
+                                                            <children>
+                                                                <Label minWidth="100" style="-fx-text-fill: #ce93d8; -fx-font-weight: bold;" text="/screenshot" />
+                                                                <Label styleClass="label-muted" text="Capture &amp; send emulator screen" wrapText="true" />
+                                                            </children>
+                                                        </HBox>
+                                                        <HBox spacing="0">
+                                                            <children>
+                                                                <Label minWidth="100" style="-fx-text-fill: #80deea; -fx-font-weight: bold;" text="/queue" />
+                                                                <Label styleClass="label-muted" text="Task queue with schedule/remove/run" wrapText="true" />
+                                                            </children>
+                                                        </HBox>
+                                                        <HBox spacing="0">
+                                                            <children>
+                                                                <Label minWidth="100" style="-fx-text-fill: #b0bec5; -fx-font-weight: bold;" text="/help" />
+                                                                <Label styleClass="label-muted" text="Show all commands in Telegram" wrapText="true" />
+                                                            </children>
+                                                        </HBox>
+                                                    </children>
+                                                </VBox>
+                                            </children>
+                                        </VBox>
+                                    </children>
+                                </VBox>
+                            </children>
+                        </VBox>
+
+                    </children>
+                </VBox>
+            </content>
+        </ScrollPane>
+    </children>
+</VBox>

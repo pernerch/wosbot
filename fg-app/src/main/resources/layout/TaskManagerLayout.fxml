@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.TabPane?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.Region?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<VBox maxHeight="Infinity" maxWidth="Infinity"
+      spacing="6" style="-fx-padding: 8 16 16 16;"
+      xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1">
+   <children>
+      <!-- Top Search + Action Bar -->
+      <HBox alignment="CENTER_LEFT" spacing="12" styleClass="control-top-bar">
+         <children>
+            <!-- Search Field -->
+            <HBox alignment="CENTER_LEFT" spacing="0" HBox.hgrow="ALWAYS" styleClass="log-search-wrapper">
+               <children>
+                  <FontIcon iconLiteral="mdi2m-magnify" iconSize="16" iconColor="#636a75" />
+                  <TextField fx:id="txtFilterTaskName" promptText="Search tasks..."
+                             HBox.hgrow="ALWAYS" styleClass="control-search-field" />
+                  <Button fx:id="btnClearFilter" text="✕" onAction="#handleClearTaskFilter"
+                          styleClass="search-clear-btn" />
+               </children>
+            </HBox>
+
+            <Region HBox.hgrow="ALWAYS" />
+
+            <!-- Timeline View toggle -->
+            <Button fx:id="btnToggleView" text="Timeline View" onAction="#handleToggleView"
+                    styleClass="action-button-timeline">
+               <graphic>
+                   <FontIcon iconLiteral="mdi2c-chart-timeline" iconSize="16" iconColor="white" />
+               </graphic>
+            </Button>
+         </children>
+      </HBox>
+
+      <!-- Content Stack (Data Grid / Timeline) -->
+      <StackPane VBox.vgrow="ALWAYS" maxHeight="Infinity" maxWidth="Infinity">
+         <children>
+            <!-- Standard Table View -->
+            <TabPane fx:id="tabPaneProfiles" styleClass="horizontal-tab-pane">
+               <!-- Profile tabs will be populated dynamically -->
+            </TabPane>
+            <!-- Gantt View (loaded dynamically) -->
+            <VBox fx:id="ganttViewContainer" visible="false" managed="false" />
+         </children>
+      </StackPane>
+   </children>
+</VBox>

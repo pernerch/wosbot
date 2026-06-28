@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- Research — AnchorPane root with FlowPane research categories -->
+<AnchorPane maxHeight="Infinity" maxWidth="Infinity"
+            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                styleClass="task-page-scroll"
+                AnchorPane.topAnchor="0" AnchorPane.bottomAnchor="0"
+                AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0">
+        <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+            <VBox styleClass="content-card">
+                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-green">
+                    <Label text="Enable Research" />
+                </HBox>
+                <VBox spacing="10" styleClass="task-section-inner">
+                    <Label styleClass="task-card-description"
+                           text="Automates research technology in your city" wrapText="true" />
+                    <Separator style="-fx-opacity: 0.25;" />
+                    <CheckBox fx:id="checkBoxEnableResearch" mnemonicParsing="false"
+                              text="Enable Research" />
+
+                    <Separator style="-fx-opacity: 0.25;" />
+
+                    <Label text="Research Categories"
+                           style="-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #9eaab6;" />
+
+                    <FlowPane hgap="20" vgap="10" alignment="CENTER_LEFT">
+                        <CheckBox fx:id="checkBoxGrowth" mnemonicParsing="false" text="Growth" />
+                        <CheckBox fx:id="checkBoxEconomy" mnemonicParsing="false" text="Economy" />
+                        <CheckBox fx:id="checkBoxBattle" mnemonicParsing="false" text="Battle" />
+                    </FlowPane>
+                </VBox>
+            </VBox>
+
+        </VBox>
+    </ScrollPane>
+</AnchorPane>

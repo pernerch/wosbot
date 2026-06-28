@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>dev.frostguard</groupId>
+		<artifactId>frostguard</artifactId>
+		<version>${revision}</version>
+	</parent>
+
+	<artifactId>fg-app</artifactId>
+	<name>Frostguard Desktop Application</name>
+	<description>JavaFX desktop shell, controller layer, and packaged runtime assets</description>
+
+	<!-- ─── Module-scoped version pins ─── -->
+	<properties>
+		<project.build.outputName>frostguard-${project.version}</project.build.outputName>
+
+		<!-- Third-party UI libraries -->
+		<atlantafx.version>2.0.1</atlantafx.version>
+		<controlsfx.version>11.2.2</controlsfx.version>
+		<ikonli.version>12.3.1</ikonli.version>
+
+		<!-- Native access -->
+		<jna.version>5.13.0</jna.version>
+
+		<!-- Logging runtime -->
+		<logback.version>1.5.13</logback.version>
+
+		<!-- Maven plugin versions -->
+		<maven.jar.version>3.2.0</maven.jar.version>
+		<maven.dependency.version>3.3.0</maven.dependency.version>
+		<maven.resources.version>3.3.1</maven.resources.version>
+		<maven.assembly.version>3.7.1</maven.assembly.version>
+	</properties>
+
+	<!-- ─── Compile and runtime dependencies ─── -->
+	<dependencies>
+		<!-- JavaFX core -->
+		<dependency>
+			<groupId>org.openjfx</groupId>
+			<artifactId>javafx-controls</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.openjfx</groupId>
+			<artifactId>javafx-fxml</artifactId>
+		</dependency>
+
+		<!-- AtlantaFX theme -->
+		<dependency>
+			<groupId>io.github.mkpaz</groupId>
+			<artifactId>atlantafx-base</artifactId>
+			<version>${atlantafx.version}</version>
+		</dependency>
+
+		<!-- Extended JavaFX controls -->
+		<dependency>
+			<groupId>org.controlsfx</groupId>
+			<artifactId>controlsfx</artifactId>
+			<version>${controlsfx.version}</version>
+		</dependency>
+
+		<!-- Icon packs -->
+		<dependency>
+			<groupId>org.kordamp.ikonli</groupId>
+			<artifactId>ikonli-javafx</artifactId>
+			<version>${ikonli.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.kordamp.ikonli</groupId>
+			<artifactId>ikonli-materialdesign2-pack</artifactId>
+			<version>${ikonli.version}</version>
+		</dependency>
+
+		<!-- JNA for native OS calls -->
+		<dependency>
+			<groupId>net.java.dev.jna</groupId>
+			<artifactId>jna-platform</artifactId>
+			<version>${jna.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>net.java.dev.jna</groupId>
+			<artifactId>jna</artifactId>
+			<version>${jna.version}</version>
+		</dependency>
+
+		<!-- Internal modules -->
+		<dependency>
+			<groupId>dev.frostguard</groupId>
+			<artifactId>fg-api</artifactId>
+			<version>${revision}</version>
+		</dependency>
+		<dependency>
+			<groupId>dev.frostguard</groupId>
+			<artifactId>fg-engine</artifactId>
+			<version>${revision}</version>
+		</dependency>
+		<dependency>
+			<groupId>dev.frostguard</groupId>
+			<artifactId>fg-tasks</artifactId>
+			<version>${revision}</version>
+		</dependency>
+		<dependency>
+			<groupId>dev.frostguard</groupId>
+			<artifactId>fg-vision</artifactId>
+			<version>${revision}</version>
+		</dependency>
+
+		<!-- Logging -->
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-api</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>ch.qos.logback</groupId>
+			<artifactId>logback-classic</artifactId>
+			<version>${logback.version}</version>
+			<scope>compile</scope>
+		</dependency>
+	</dependencies>
+
+	<!-- ─── Build configuration ─── -->
+	<build>
+		<finalName>${project.build.outputName}</finalName>
+
+		<plugins>
+			<!-- Distribution archive -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-assembly-plugin</artifactId>
+				<version>${maven.assembly.version}</version>
+				<executions>
+					<execution>
+						<id>build-desktop-zip</id>
+						<phase>package</phase>
+						<goals>
+							<goal>single</goal>
+						</goals>
+						<configuration>
+							<finalName>${project.build.outputName}</finalName>
+							<descriptors>
+								<descriptor>src/main/assembly/zip.xml</descriptor>
+							</descriptors>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- Executable JAR manifest -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>${maven.jar.version}</version>
+				<configuration>
+					<archive>
+						<manifest>
+							<mainClass>dev.frostguard.app.bootstrap.Main</mainClass>
+							<addClasspath>true</addClasspath>
+							<classpathPrefix>lib/</classpathPrefix>
+							<addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+							<addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
+						</manifest>
+						<manifestEntries>
+							<Implementation-Title>${project.name}</Implementation-Title>
+							<Implementation-Version>${project.version}</Implementation-Version>
+							<Implementation-Vendor-Id>${project.groupId}</Implementation-Vendor-Id>
+							<Built-By>${user.name}</Built-By>
+							<Build-Jdk>${java.version}</Build-Jdk>
+							<Build-Time>${maven.build.timestamp}</Build-Time>
+						</manifestEntries>
+					</archive>
+				</configuration>
+			</plugin>
+
+			<!-- Collect runtime JARs -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<version>${maven.dependency.version}</version>
+				<executions>
+					<execution>
+						<id>stage-runtime-dependencies</id>
+						<phase>package</phase>
+						<goals>
+							<goal>copy-dependencies</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>${project.build.directory}/lib</outputDirectory>
+							<includeScope>runtime</includeScope>
+							<overWriteReleases>false</overWriteReleases>
+							<overWriteSnapshots>false</overWriteSnapshots>
+							<overWriteIfNewer>true</overWriteIfNewer>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- Bundle external tool runtimes -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<version>${maven.resources.version}</version>
+				<executions>
+					<!-- ADB binaries -->
+					<execution>
+						<id>stage-adb-runtime</id>
+						<phase>process-resources</phase>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>${project.build.directory}/lib/adb</outputDirectory>
+							<resources>
+								<resource>
+									<directory>${project.parent.basedir}/tools/adb</directory>
+									<filtering>false</filtering>
+								</resource>
+							</resources>
+						</configuration>
+					</execution>
+					<!-- Tesseract OCR binaries -->
+					<execution>
+						<id>stage-tesseract-runtime</id>
+						<phase>process-resources</phase>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>${project.build.directory}/lib/tesseract</outputDirectory>
+							<resources>
+								<resource>
+									<directory>${project.parent.basedir}/tools/tesseract</directory>
+									<filtering>false</filtering>
+								</resource>
+							</resources>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+</project>

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- Shop — StackPane root with FlowPane-based shop sections -->
+<StackPane maxHeight="Infinity" maxWidth="Infinity"
+           HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+           xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                styleClass="task-page-scroll">
+        <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+            <!-- Nomadic Merchant -->
+            <VBox styleClass="content-card">
+                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-yellow">
+                    <Label text="Nomadic Merchant" />
+                </HBox>
+                <VBox spacing="10" styleClass="task-section-inner">
+                    <Label styleClass="task-card-description"
+                           text="Configure purchases from the Nomadic Merchant shop" wrapText="true" />
+                    <Separator style="-fx-opacity: 0.25;" />
+                    <FlowPane hgap="20" vgap="10" alignment="CENTER_LEFT">
+                        <CheckBox fx:id="checkBoxNomadicMerchant" mnemonicParsing="false"
+                                  text="Buy resources" />
+                        <CheckBox fx:id="checkBoxNomadicMerchantVip" mnemonicParsing="false"
+                                  text="Buy VIP points" />
+                    </FlowPane>
+                </VBox>
+            </VBox>
+
+            <!-- Bank -->
+            <VBox styleClass="content-card">
+                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-green">
+                    <Label text="Enable Bank" />
+                </HBox>
+                <VBox spacing="10" styleClass="task-section-inner">
+                    <Label styleClass="task-card-description"
+                           text="Configure automatic bank transactions" wrapText="true" />
+                    <Separator style="-fx-opacity: 0.25;" />
+                    <CheckBox fx:id="checkBoxBank" mnemonicParsing="false" text="Enable Bank" />
+                    <Separator style="-fx-opacity: 0.25;" />
+                    <HBox spacing="10" alignment="CENTER_LEFT">
+                        <Label styleClass="task-field-label" text="Period:" />
+                        <ComboBox fx:id="comboBoxBankDelay" prefWidth="150.0"
+                                  promptText="Select period" />
+                    </HBox>
+                </VBox>
+            </VBox>
+
+            <!-- Mystery Shop -->
+            <TitledPane text="Mystery Shop" expanded="true" collapsible="false"
+                        styleClass="content-card">
+                <VBox spacing="10" styleClass="task-section-inner">
+                    <Label styleClass="task-card-description"
+                           text="Configure automatic purchases from Mystery Shop" wrapText="true" />
+                    <Separator style="-fx-opacity: 0.25;" />
+                    <CheckBox fx:id="checkBoxMysteryShop" mnemonicParsing="false"
+                              text="Enable Mystery Shop" />
+                    <Separator style="-fx-opacity: 0.25;" />
+                    <CheckBox fx:id="checkBoxMysteryShop50DiscountGear" mnemonicParsing="false"
+                              text="Buy 50% discounted hero gear (250 badges)" />
+                </VBox>
+            </TitledPane>
+
+        </VBox>
+    </ScrollPane>
+</StackPane>

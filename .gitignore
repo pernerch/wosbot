@@ -1,0 +1,80 @@
+.settings/org.eclipse.m2e.core.prefs
+log/bot.log
+.vscode/settings.json
+/temp
+
+# Ignore Maven build output
+target/
+**/target/
+
+# Binaries
+*.jar
+*.war
+*.ear
+*.class
+
+# Logs
+*.log
+/log/
+**/log/
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+.nb-gradle/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+fg-web/dist/
+dist/
+build/
+.next/
+out/
+
+# Environment configs
+.env*
+
+# Database
+*.db*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Misc cache
+.cache/
+.vite/
+
+# Additional IDE files
+.metadata/
+nbproject/private/
+build/
+*.bak
+*.swp
+*~
+dependency-reduced-pom.xml
+.scannerwork/
+
+# Frostguard specific
+fg-*/bin
+fg-*/.settings
+database.db-shm
+database.db-wal
+

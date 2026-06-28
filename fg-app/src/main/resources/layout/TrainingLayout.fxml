@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- Training — StackPane root with FlowPane-based troop toggles -->
+<StackPane maxHeight="Infinity" maxWidth="Infinity"
+           HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+           xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                styleClass="task-page-scroll">
+        <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+            <!-- Training Enable Card -->
+            <VBox styleClass="content-card">
+                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-green">
+                    <Label text="Enable Training" />
+                    <Region HBox.hgrow="ALWAYS" />
+                    <Label styleClass="label-muted"
+                           style="-fx-font-size: 11px; -fx-background-color: rgba(0,0,0,0.2); -fx-padding: 2 6; -fx-background-radius: 4;"
+                           text="Automatically Replenishes" />
+                </HBox>
+                <VBox spacing="10" styleClass="task-section-inner">
+                    <Label styleClass="task-card-description"
+                           text="Automates training of troops for your city" wrapText="true" />
+                    <Separator style="-fx-opacity: 0.25;" />
+                    <CheckBox fx:id="checkBoxEnableTraining" mnemonicParsing="false"
+                              text="Enable Training" />
+                </VBox>
+            </VBox>
+
+            <!-- Troop Type Selection — FlowPane instead of GridPane -->
+            <VBox styleClass="content-card">
+                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-blue">
+                    <Label text="Troop Selection" />
+                </HBox>
+                <VBox spacing="10" styleClass="task-section-inner">
+                    <FlowPane hgap="20" vgap="10" alignment="CENTER_LEFT">
+                        <CheckBox fx:id="checkBoxTrainInfantry" mnemonicParsing="false"
+                                  text="Train Infantry" />
+                        <CheckBox fx:id="checkBoxTrainMarksman" mnemonicParsing="false"
+                                  text="Train Marksmen" />
+                        <CheckBox fx:id="checkBoxTrainLancers" mnemonicParsing="false"
+                                  text="Train Lancers" />
+                    </FlowPane>
+
+                    <Separator style="-fx-opacity: 0.25;" />
+
+                    <FlowPane hgap="20" vgap="10" alignment="CENTER_LEFT">
+                        <CheckBox fx:id="checkBoxTrainPrioritizePromotion" mnemonicParsing="false"
+                                  text="Prioritize Troop Promotion" />
+                        <CheckBox fx:id="checkBoxAppointMinister" mnemonicParsing="false"
+                                  text="Appoint Minister of Education" />
+                    </FlowPane>
+                </VBox>
+            </VBox>
+
+        </VBox>
+    </ScrollPane>
+</StackPane>

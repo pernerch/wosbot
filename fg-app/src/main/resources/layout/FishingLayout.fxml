@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox maxHeight="Infinity" maxWidth="Infinity"
+      HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+      xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1">
+    <children>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="task-page-scroll"
+                    vbarPolicy="AS_NEEDED" VBox.vgrow="ALWAYS">
+            <content>
+                <VBox styleClass="task-page-root" maxHeight="Infinity"
+                      maxWidth="Infinity">
+                    <children>
+
+                        <!-- Fishing Minigame Card -->
+                        <VBox styleClass="content-card">
+                            <children>
+                                <HBox alignment="CENTER_LEFT" maxWidth="Infinity"
+                                      styleClass="header-teal">
+                                    <children>
+                                        <Label text="Fishing Minigame Control" />
+                                    </children>
+                                </HBox>
+                                <VBox styleClass="task-section-inner">
+                                    <children>
+                                        <Label styleClass="task-card-description"
+                                               text="Automates the fishing tournament minigame. Threads through gaps to reach the bottom while avoiding fish."
+                                               wrapText="true" />
+
+                                        <Separator style="-fx-opacity: 0.25;" />
+
+                                        <CheckBox fx:id="checkBoxEnableFishing" mnemonicParsing="false"
+                                                  text="Enable Fishing Minigame Task" />
+                                    </children>
+                                </VBox>
+                            </children>
+                        </VBox>
+
+                        <!-- Test Hook Loop Card -->
+                        <VBox styleClass="content-card">
+                            <children>
+                                <HBox alignment="CENTER_LEFT" maxWidth="Infinity"
+                                      styleClass="header-blue">
+                                    <children>
+                                        <Label text="Test Hook Loop" />
+                                    </children>
+                                </HBox>
+                                <VBox styleClass="task-section-inner">
+                                    <children>
+                                        <Label styleClass="task-card-description"
+                                               text="Captures every frame from the emulator and searches for the fishing hook template. Logs hook coordinates and per-frame ADB vs OpenCV timing to the Logs UI."
+                                               wrapText="true" />
+
+                                        <Separator style="-fx-opacity: 0.25;" />
+
+                                        <CheckBox fx:id="checkBoxEnableTestHookLoop" mnemonicParsing="false"
+                                                  text="Enable Test Hook Loop" />
+                                    </children>
+                                </VBox>
+                            </children>
+                        </VBox>
+
+                    </children>
+                </VBox>
+            </content>
+        </ScrollPane>
+    </children>
+</VBox>

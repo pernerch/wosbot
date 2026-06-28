@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.frostguard</groupId>
+        <artifactId>frostguard</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>fg-data</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Frostguard Data Module</name>
+    <description>Domain persistence — managed entities, repositories, and schema seeding over JPA.</description>
+    <url>https://frostguard.dev</url>
+
+    <properties>
+        <!-- Dependency versions managed locally for this module -->
+        <orm.runtime.version>7.0.8.Final</orm.runtime.version>
+        <db.driver.version>3.42.0.0</db.driver.version>
+        <pool.version>5.0.1</pool.version>
+        <xml.bind.api.version>4.0.0</xml.bind.api.version>
+        <xml.bind.runtime.version>4.0.3</xml.bind.runtime.version>
+    </properties>
+
+    <dependencies>
+        <!-- fg-api: shared domain types and configuration enums -->
+        <dependency>
+            <groupId>dev.frostguard</groupId> <!-- frostguard ecosystem -->
+            <artifactId>fg-api</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <!-- xerial: embedded SQLite JDBC driver -->
+        <dependency>
+            <groupId>org.xerial</groupId> <!-- xerial.org -->
+            <artifactId>sqlite-jdbc</artifactId> <!-- JDBC 4.x bridge -->
+            <version>${db.driver.version}</version>
+        </dependency>
+
+        <!-- zaxxer: high-performance JDBC connection pool -->
+        <dependency>
+            <groupId>com.zaxxer</groupId> <!-- zaxxer.com -->
+            <artifactId>HikariCP</artifactId> <!-- single-connection for SQLite -->
+            <version>${pool.version}</version>
+        </dependency>
+
+        <!-- hibernate: JPA implementation core -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId> <!-- hibernate.org -->
+            <artifactId>hibernate-core</artifactId> <!-- ORM runtime -->
+            <version>${orm.runtime.version}</version>
+        </dependency>
+
+        <!-- hibernate: SQLite dialect from community dialects pack -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId> <!-- hibernate.org community -->
+            <artifactId>hibernate-community-dialects</artifactId> <!-- dialect extensions -->
+            <version>${orm.runtime.version}</version>
+        </dependency>
+
+        <!-- jakarta: persistence specification (JPA 3.2) -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId> <!-- jakarta.ee spec -->
+            <artifactId>jakarta.persistence-api</artifactId> <!-- API only -->
+            <version>3.2.0</version>
+        </dependency>
+
+        <!-- jakarta: XML binding API for Hibernate metadata -->
+        <dependency>
+            <groupId>jakarta.xml.bind</groupId> <!-- jakarta.ee xml -->
+            <artifactId>jakarta.xml.bind-api</artifactId> <!-- bind contract -->
+            <version>${xml.bind.api.version}</version>
+        </dependency>
+
+        <!-- glassfish: JAXB reference runtime -->
+        <dependency>
+            <groupId>org.glassfish.jaxb</groupId> <!-- eclipse.org glassfish -->
+            <artifactId>jaxb-runtime</artifactId> <!-- runtime impl -->
+            <version>${xml.bind.runtime.version}</version>
+        </dependency>
+
+        <!-- slf4j: logging abstraction layer -->
+        <dependency>
+            <groupId>org.slf4j</groupId> <!-- slf4j.org -->
+            <artifactId>slf4j-api</artifactId> <!-- facade API -->
+        </dependency>
+
+        <!-- logback: SLF4J runtime binding (test/runtime only) -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId> <!-- qos.ch -->
+            <artifactId>logback-classic</artifactId> <!-- classic module -->
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <parameters>true</parameters>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  JPA persistence descriptor for the Frostguard embedded data store.
+  Single-connection SQLite pool via HikariCP; Hibernate manages the schema.
+-->
+<persistence xmlns="https://jakarta.ee/xml/ns/persistence"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="https://jakarta.ee/xml/ns/persistence
+                                 https://jakarta.ee/xml/ns/persistence/persistence_3_0.xsd"
+             version="3.0">
+
+    <persistence-unit name="frostguardPU" transaction-type="RESOURCE_LOCAL">
+        <provider>org.hibernate.jpa.HibernatePersistenceProvider</provider>
+
+        <!-- Registered entity classes (alphabetical; no classpath scanning) -->
+        <class>dev.frostguard.data.entity.Config</class>
+        <class>dev.frostguard.data.entity.ConfigTemplate</class>
+        <class>dev.frostguard.data.entity.DailyTask</class>
+        <class>dev.frostguard.data.entity.DailyTaskTemplate</class>
+        <class>dev.frostguard.data.entity.Profile</class>
+        <class>dev.frostguard.data.entity.ProfileBuilding</class>
+
+        <exclude-unlisted-classes>true</exclude-unlisted-classes>
+        <shared-cache-mode>NONE</shared-cache-mode>
+        <validation-mode>NONE</validation-mode>
+
+        <properties>
+            <!--
+              HikariCP pool configuration.
+              SQLite only supports a single writer, so the pool is capped at 1.
+            -->
+            <property name="hibernate.connection.provider_class"
+                      value="com.zaxxer.hikari.hibernate.HikariConnectionProvider"/>
+            <property name="hibernate.hikari.minimumIdle"       value="1"/>
+            <property name="hibernate.hikari.maximumPoolSize"   value="1"/>
+            <property name="hibernate.hikari.idleTimeout"       value="300000"/>
+            <property name="hibernate.hikari.connectionTimeout" value="20000"/>
+
+            <!-- Community dialect for SQLite -->
+            <property name="hibernate.dialect"
+                      value="org.hibernate.community.dialect.SQLiteDialect"/>
+
+            <!-- Automatic DDL management (safe for embedded use) -->
+            <property name="hibernate.hbm2ddl.auto"                value="update"/>
+            <property name="hibernate.globally_quoted_identifiers" value="false"/>
+
+            <!-- JDBC driver and connection URL with WAL journaling -->
+            <property name="jakarta.persistence.jdbc.driver" value="org.sqlite.JDBC"/>
+            <property name="jakarta.persistence.jdbc.url"
+                      value="jdbc:sqlite:database.db?busy_timeout=1000&amp;journal_mode=WAL"/>
+        </properties>
+    </persistence-unit>
+</persistence>

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- Statistics — BorderPane with TabPane splitting table and counters -->
+<BorderPane maxHeight="Infinity" maxWidth="Infinity"
+            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <!-- Top controls -->
+    <top>
+        <HBox alignment="CENTER_RIGHT" spacing="12"
+              style="-fx-padding: 10 16 6 16;">
+            <Button fx:id="btnRefresh" mnemonicParsing="false"
+                    onAction="#handleRefresh" styleClass="action-button-timeline" text="Refresh" />
+            <Button fx:id="btnReset" mnemonicParsing="false"
+                    onAction="#handleReset" styleClass="action-button-clear" text="Reset Statistics" />
+        </HBox>
+    </top>
+
+    <!-- Main content -->
+    <center>
+        <VBox spacing="10" style="-fx-padding: 0 16 16 16;">
+
+            <!-- Summary Cards -->
+            <HBox fx:id="hboxSummaryCards" spacing="15" alignment="CENTER" />
+
+            <Separator style="-fx-opacity: 0.25;" />
+
+            <!-- Task Statistics Table -->
+            <VBox styleClass="content-card" VBox.vgrow="ALWAYS">
+                <VBox style="-fx-padding: 0;" VBox.vgrow="ALWAYS">
+                    <TableView fx:id="tableTasks" minHeight="300.0" prefHeight="450.0"
+                               VBox.vgrow="ALWAYS">
+                        <columnResizePolicy>
+                            <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
+                        </columnResizePolicy>
+                        <columns>
+                            <TableColumn fx:id="colTaskName" prefWidth="200.0" text="Task Name" />
+                            <TableColumn fx:id="colRuns" prefWidth="80.0" text="Runs" />
+                            <TableColumn fx:id="colAvgTime" prefWidth="120.0" text="Avg Time (s)" />
+                            <TableColumn fx:id="colTotalTime" prefWidth="120.0" text="Total Time (s)" />
+                            <TableColumn fx:id="colAvgOcr" prefWidth="100.0" text="Avg OCR Fail" />
+                            <TableColumn fx:id="colAvgImg" prefWidth="100.0" text="Avg Img Fail" />
+                            <TableColumn fx:id="colLastRun" prefWidth="150.0" text="Last Run" />
+                        </columns>
+                    </TableView>
+                </VBox>
+            </VBox>
+
+            <Separator style="-fx-opacity: 0.25;" />
+
+            <!-- Activity Counters -->
+            <VBox styleClass="content-card">
+                <HBox maxWidth="Infinity" styleClass="header-blue">
+                    <Label text="Activity Counters" />
+                </HBox>
+                <VBox styleClass="task-section-inner">
+                    <VBox fx:id="vboxCounterSections" spacing="10" />
+                    <Label fx:id="lblNoData" styleClass="label-muted"
+                           text="No statistics recorded yet..." visible="false" managed="false" />
+                </VBox>
+            </VBox>
+
+        </VBox>
+    </center>
+</BorderPane>

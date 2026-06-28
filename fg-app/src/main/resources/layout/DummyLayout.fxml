@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox maxHeight="Infinity" maxWidth="Infinity"
+      HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+      xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1">
+    <children>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="task-page-scroll"
+                    vbarPolicy="AS_NEEDED" VBox.vgrow="ALWAYS">
+            <content>
+                <VBox styleClass="task-page-root" maxHeight="Infinity"
+                      maxWidth="Infinity">
+                    <children>
+
+                        <!-- Dummy Task Card -->
+                        <VBox styleClass="content-card">
+                            <children>
+                                <HBox alignment="CENTER_LEFT" maxWidth="Infinity"
+                                      styleClass="header-blue">
+                                    <children>
+                                        <CheckBox fx:id="checkBoxEnableDummyTask" mnemonicParsing="false"
+                                                  style="-fx-font-weight: bold;" text="Enable Dummy Task" />
+                                    </children>
+                                </HBox>
+                                <VBox styleClass="task-section-inner">
+                                    <children>
+                                        <Label styleClass="task-card-description"
+                                               text="This task will run infinitely until it finds 'go.png' image. Checks every 5 seconds. Reschedules for 60 mins if found."
+                                               wrapText="true" />
+
+                                        <Separator style="-fx-opacity: 0.25;" />
+
+                                        <HBox alignment="CENTER_LEFT" spacing="12">
+                                            <children>
+                                                <Label styleClass="task-field-label" text="Priority:" />
+                                                <TextField fx:id="textFieldPriority" prefWidth="100.0" promptText="100" />
+                                            </children>
+                                        </HBox>
+                                    </children>
+                                </VBox>
+                            </children>
+                        </VBox>
+
+                    </children>
+                </VBox>
+            </content>
+        </ScrollPane>
+    </children>
+</VBox>

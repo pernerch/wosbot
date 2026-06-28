@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import dev.frostguard.app.shared.PriorityListView?>
+
+<!-- Alliance Shop — restructured with stacked sections instead of nested content-cards -->
+<BorderPane maxHeight="Infinity" maxWidth="Infinity"
+            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <center>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                    styleClass="task-page-scroll">
+            <VBox spacing="16" styleClass="task-page-root" maxWidth="Infinity">
+
+                <!-- Auto-purchase toggle -->
+                <VBox styleClass="content-card">
+                    <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-yellow">
+                        <Label text="Alliance Shop Automation" />
+                    </HBox>
+                    <VBox spacing="10" styleClass="task-section-inner">
+                        <Label styleClass="task-card-description"
+                               text="Configure automatic purchasing from the alliance shop"
+                               wrapText="true" />
+                        <Separator style="-fx-opacity: 0.25;" />
+
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <CheckBox fx:id="enableAllianceShopCheckbox" mnemonicParsing="false"
+                                      text="Enable Alliance Shop" />
+                        </HBox>
+                    </VBox>
+                </VBox>
+
+                <!-- Configuration Settings -->
+                <VBox styleClass="content-card">
+                    <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-purple">
+                        <Label text="Configuration" />
+                    </HBox>
+                    <VBox spacing="10" styleClass="task-section-inner">
+                        <Label styleClass="task-card-description"
+                               text="Configure minimum coin thresholds and purchase percentage"
+                               wrapText="true" />
+                        <Separator style="-fx-opacity: 0.25;" />
+
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Min Coins to Activate" minWidth="160" />
+                            <TextField fx:id="minCoinsToActivateTextField" prefWidth="120.0" />
+                        </HBox>
+                        
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Min Coins" minWidth="160" />
+                            <TextField fx:id="minCoinsTextField" prefWidth="120.0" />
+                        </HBox>
+                        
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Min Percentage" minWidth="160" />
+                            <ComboBox fx:id="minPercentageComboBox" prefWidth="120.0" />
+                        </HBox>
+                    </VBox>
+                </VBox>
+
+                <!-- Purchase priorities using FlowPane instead of GridPane -->
+                <VBox styleClass="content-card">
+                    <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-blue">
+                        <Label text="Purchase Priorities" />
+                    </HBox>
+                    <VBox spacing="10" styleClass="task-section-inner">
+                        <Label fx:id="instructionsLabel" styleClass="task-card-description"
+                               text="Drag items to reorder purchase priority. Higher items are bought first."
+                               wrapText="true" />
+                        <Separator style="-fx-opacity: 0.25;" />
+
+                        <dev.frostguard.app.shared.PriorityListView fx:id="allianceShopPriorities" prefHeight="220" maxWidth="Infinity" />
+                    </VBox>
+                </VBox>
+
+            </VBox>
+        </ScrollPane>
+    </center>
+</BorderPane>

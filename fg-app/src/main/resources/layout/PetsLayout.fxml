@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- Pet management — BorderPane with FlowPane-based skill toggles -->
+<BorderPane maxHeight="Infinity" maxWidth="Infinity"
+            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <center>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                    styleClass="task-page-scroll">
+            <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+                <!-- Pet Activation -->
+                <VBox styleClass="content-card">
+                    <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-orange">
+                        <Label text="Pet Automation" />
+                    </HBox>
+                    <VBox spacing="10" styleClass="task-section-inner">
+                        <Label styleClass="task-card-description"
+                               text="Configure automatic pet skill activation and management"
+                               wrapText="true" />
+                        <Separator style="-fx-opacity: 0.25;" />
+                        <CheckBox fx:id="checkBoxPetSkills" mnemonicParsing="false"
+                                  text="Enable Pet Management" />
+                        <CheckBox fx:id="checkBoxPetAllianceTreasure" mnemonicParsing="false"
+                                  text="Alliance Treasure" />
+                        <CheckBox fx:id="checkBoxPetPersonalTreasure" mnemonicParsing="false"
+                                  text="Personal Treasure" />
+                    </VBox>
+                </VBox>
+
+                <!-- Pet Skill Selection — FlowPane instead of GridPane -->
+                <VBox styleClass="content-card">
+                    <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-blue">
+                        <Label text="Skill Configuration" />
+                    </HBox>
+                    <VBox spacing="10" styleClass="task-section-inner">
+                        <Label styleClass="task-card-description"
+                               text="Select which pet skills to activate automatically"
+                               wrapText="true" />
+                        <Separator style="-fx-opacity: 0.25;" />
+
+                        <FlowPane hgap="18" vgap="10" alignment="CENTER_LEFT">
+                            <CheckBox fx:id="checkboxFoodSkill" mnemonicParsing="false"
+                                      text="Food Skill" />
+                            <CheckBox fx:id="checkboxGatheringSkill" mnemonicParsing="false"
+                                      text="Gathering Skill" />
+                            <CheckBox fx:id="checkboxStaminaSkill" mnemonicParsing="false"
+                                      text="Stamina Skill" />
+                            <CheckBox fx:id="checkboxTreasureSkill" mnemonicParsing="false"
+                                      text="Treasure Skill" />
+                        </FlowPane>
+                        
+                        <Separator style="-fx-opacity: 0.25;" />
+                        
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Gathering Resource" minWidth="140" />
+                            <ComboBox fx:id="comboBoxGatheringResource" prefWidth="120.0" />
+                        </HBox>
+                    </VBox>
+                </VBox>
+
+            </VBox>
+        </ScrollPane>
+    </center>
+</BorderPane>

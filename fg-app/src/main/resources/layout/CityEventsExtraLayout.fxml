@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- Extra City Events — AnchorPane root with VBox form rows -->
+<AnchorPane maxHeight="Infinity" maxWidth="Infinity"
+            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                styleClass="task-page-scroll"
+                AnchorPane.topAnchor="0" AnchorPane.bottomAnchor="0"
+                AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0">
+        <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+            <VBox styleClass="content-card">
+                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-yellow">
+                    <Label style="-fx-font-weight: bold; -fx-text-fill: -fg-bg-app; -fx-font-size: 13px;"
+                           text="Extra City Events" />
+                </HBox>
+                <VBox spacing="12" styleClass="task-section-inner">
+                    <Label styleClass="task-card-description"
+                           text="Additional daily operations and tasks" wrapText="true" />
+                    <Separator style="-fx-opacity: 0.25;" />
+
+                    <!-- Arena section -->
+                    <HBox alignment="CENTER_LEFT" spacing="14">
+                        <CheckBox fx:id="checkBoxArena" mnemonicParsing="false" text="Arena" />
+                        <CheckBox fx:id="checkBoxArenaRefreshWithGems" mnemonicParsing="false"
+                                  text="Refresh with gems" />
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Label styleClass="task-field-label" text="Extra attempts:" />
+                        <ComboBox fx:id="comboBoxArenaExtraAttempts" prefWidth="80.0"
+                                  promptText="0" />
+                    </HBox>
+
+                    <Separator style="-fx-opacity: 0.15;" />
+
+                    <!-- VIP and activation -->
+                    <HBox alignment="CENTER_LEFT" spacing="14">
+                        <CheckBox fx:id="checkBoxDailyVipRewards" text="Claim daily vip rewards" />
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Label styleClass="task-field-label" text="Activation time (UTC):" />
+                        <TextField fx:id="textFieldArenaActivationHour" prefWidth="80.0"
+                                   promptText="HH:mm" />
+                    </HBox>
+
+                    <Separator style="-fx-opacity: 0.15;" />
+
+                    <!-- Storehouse and player state -->
+                    <HBox alignment="CENTER_LEFT" spacing="14">
+                        <CheckBox fx:id="checkBoxStorehouseChest"
+                                  text="Claim storehouse chests + stamina" />
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Label styleClass="task-field-label" text="State:" />
+                        <TextField fx:id="textFieldArenaPlayerState" prefWidth="80.0"
+                                   promptText="e.g. 1234" />
+                    </HBox>
+
+                    <Separator style="-fx-opacity: 0.15;" />
+
+                    <!-- Hero recruitment -->
+                    <CheckBox fx:id="checkBoxHeroRecruitment"
+                              text="Open recruitment hero chests" />
+
+                    <Separator style="-fx-opacity: 0.15;" />
+
+                    <!-- Labyrinth and monthly VIP -->
+                    <FlowPane hgap="20" vgap="10" alignment="CENTER_LEFT">
+                        <CheckBox fx:id="checkBoxDailyLabyrinth"
+                                  text="Complete daily labyrinth" />
+                        <CheckBox fx:id="checkBoxBuyMonthlyVip"
+                                  text="Buy monthly vip (10k gems)" />
+                    </FlowPane>
+
+                    <Separator style="-fx-opacity: 0.15;" />
+
+                    <!-- Trek -->
+                    <FlowPane hgap="20" vgap="10" alignment="CENTER_LEFT">
+                        <CheckBox fx:id="checkBoxTrekSupplies" text="Claim Trek Supplies" />
+                        <CheckBox fx:id="checkBoxTrekAutomation"
+                                  text="Tundra Trek Automation" />
+                    </FlowPane>
+
+                    <!-- Error label -->
+                    <Label fx:id="labelDateTimeError"
+                           style="-fx-font-size: 11px; -fx-text-fill: #ff4444;"
+                           text="" wrapText="true" />
+                </VBox>
+            </VBox>
+
+        </VBox>
+    </ScrollPane>
+</AnchorPane>

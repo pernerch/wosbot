@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import dev.frostguard.app.shared.PriorityListView?>
+
+<!-- Expert management — AnchorPane root with direct VBox content -->
+<AnchorPane maxHeight="Infinity" maxWidth="Infinity"
+            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                styleClass="task-page-scroll"
+                AnchorPane.topAnchor="0" AnchorPane.bottomAnchor="0"
+                AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0">
+        <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+            <!-- Expert Management Card -->
+            <VBox styleClass="content-card">
+                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-teal">
+                    <Label text="Expert Automation" />
+                </HBox>
+                <VBox spacing="12" styleClass="task-section-inner">
+                    <Label styleClass="task-card-description"
+                           text="Automates expert skill management and hero class assignments"
+                           wrapText="true" />
+                    <Separator style="-fx-opacity: 0.25;" />
+
+                    <VBox spacing="10">
+                        <CheckBox fx:id="claimIntelCheckBox" mnemonicParsing="false"
+                                  text="Claim Intel (Agnes)" />
+                        <CheckBox fx:id="claimLoyaltyTagCheckBox" mnemonicParsing="false"
+                                  text="Claim Loyalty Tag (Romulus)" />
+                        <CheckBox fx:id="claimTroopsCheckBox" mnemonicParsing="false"
+                                  text="Claim Troops (Romulus)" />
+
+                        <Separator style="-fx-opacity: 0.25;" />
+
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Troop Type" minWidth="120" />
+                            <ComboBox fx:id="troopTypeComboBox" prefWidth="160.0" />
+                        </HBox>
+                        
+                        <Separator style="-fx-opacity: 0.25;" />
+                        
+                        <CheckBox fx:id="enableExpertSkillTrainingCheckBox" mnemonicParsing="false"
+                                  text="Enable Expert Skill Training" />
+                    </VBox>
+                </VBox>
+            </VBox>
+            
+            <!-- Expert Skill Training (conditionally visible) -->
+            <VBox fx:id="expertSkillTrainingVBox" styleClass="content-card">
+                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-purple">
+                    <Label text="Expert Skill Training Priorities" />
+                </HBox>
+                <VBox spacing="10" styleClass="task-section-inner">
+                    <Label styleClass="task-card-description"
+                           text="Drag to reorder skill training priorities"
+                           wrapText="true" />
+                    <Separator style="-fx-opacity: 0.25;" />
+                    
+                    <dev.frostguard.app.shared.PriorityListView fx:id="expertSkillPriorities" prefHeight="220" maxWidth="Infinity" />
+                </VBox>
+            </VBox>
+
+        </VBox>
+    </ScrollPane>
+</AnchorPane>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- Beast Hunting — BorderPane with direct form rows -->
+<BorderPane maxHeight="Infinity" maxWidth="Infinity"
+            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
+            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
+
+    <center>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                    styleClass="task-page-scroll">
+            <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
+
+                <VBox styleClass="content-card">
+                    <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-red">
+                        <CheckBox fx:id="checkBoxEnableBeastHunting" mnemonicParsing="false"
+                                  style="-fx-font-weight: bold;" text="Enable Beast Hunting" />
+                    </HBox>
+                    <VBox spacing="12" styleClass="task-section-inner">
+                        <Label styleClass="task-card-description"
+                               text="Automatically hunts beasts on the world map using available stamina and march queues."
+                               wrapText="true" />
+                        <Separator style="-fx-opacity: 0.25;" />
+
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Active Marches" minWidth="120" />
+                            <ComboBox fx:id="comboBoxBeastHuntingMarches" prefWidth="140" />
+                        </HBox>
+
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Beast Level" minWidth="120" />
+                            <ComboBox fx:id="comboBoxBeastHuntingLevel" prefWidth="140" />
+                        </HBox>
+                    </VBox>
+                </VBox>
+
+            </VBox>
+        </ScrollPane>
+    </center>
+</BorderPane>

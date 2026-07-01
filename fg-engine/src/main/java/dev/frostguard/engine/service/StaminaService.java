@@ -30,6 +30,7 @@ public final class StaminaService {
     private static final Duration TICK_INTERVAL = Duration.ofMinutes(5);
     private static final Duration STALE_THRESHOLD = Duration.ofMinutes(30);
     private static final int REGEN_CEILING = 200;
+    private static final int MAX_STAMINA = 200;
 
     /** Compact snapshot of a single account's energy state. */
     private record EnergySlot(int level, Instant lastTouched) {
@@ -96,7 +97,8 @@ public final class StaminaService {
 
     public void setStamina(Long profileId, int stamina) {
         requireId(profileId);
-        EnergySlot fresh = new EnergySlot(Math.max(0, stamina), Instant.now());
+        int clamped = clampStamina(stamina);
+        EnergySlot fresh = new EnergySlot(clamped, Instant.now());
         slots.put(profileId, fresh);
         broadcastChange(profileId, fresh.level());
     }
@@ -133,11 +135,15 @@ public final class StaminaService {
         AtomicInteger result = new AtomicInteger();
         slots.compute(profileId, (id, existing) -> {
             int base = (existing != null) ? existing.level() : 0;
-            int clamped = Math.max(0, base + delta);
+            int clamped = clampStamina(base + delta);
             result.set(clamped);
             return new EnergySlot(clamped, (existing != null) ? existing.lastTouched() : Instant.now());
         });
         return result.get();
+    }
+
+    private int clampStamina(int value) {
+        return Math.max(0, Math.min(MAX_STAMINA, value));
     }
 
     private void runRegenTick() {

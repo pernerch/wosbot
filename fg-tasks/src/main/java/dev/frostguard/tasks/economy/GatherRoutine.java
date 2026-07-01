@@ -26,6 +26,7 @@ import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.api.domain.TesseractSettingsData;
 import dev.frostguard.engine.schedule.DelayedTask;
+import dev.frostguard.engine.schedule.GatherQueuePolicy;
 import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.service.StatisticsService;
@@ -106,6 +107,11 @@ public class GatherRoutine extends DelayedTask {
             return;
         if (checkGatherSpeedWait())
             return;
+        if (GatherQueuePolicy.hasPendingHigherPriorityMarchTask(profile)) {
+            logInfo("Deferring gather deployment because a higher-priority march task is pending.");
+            reschedule(LocalDateTime.now().plusMinutes(2));
+            return;
+        }
 
         // 1. Scan Active Marches
         List<GatherType> activeMarches = scanActiveMarches();
@@ -122,7 +128,8 @@ public class GatherRoutine extends DelayedTask {
     // ================= CONFIGURATION =================
 
     private void loadConfig() {
-        this.activeQueues = get(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, DEFAULT_QUEUES);
+        this.activeQueues = GatherQueuePolicy.resolveActiveQueueLimit(
+                get(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, DEFAULT_QUEUES));
         this.removeHeroes = get(ConfigurationKeyEnum.GATHER_REMOVE_HEROS_BOOL, DEFAULT_REMOVE_HEROES);
         this.intelSmart = get(ConfigurationKeyEnum.INTEL_SMART_PROCESSING_BOOL, DEFAULT_INTEL_SMART);
         this.intelRecall = get(ConfigurationKeyEnum.INTEL_RECALL_GATHER_TROOPS_BOOL, false);

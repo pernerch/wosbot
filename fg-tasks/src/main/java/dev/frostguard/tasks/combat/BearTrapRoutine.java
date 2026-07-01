@@ -15,6 +15,7 @@ import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.schedule.TaskQueue;
 import dev.frostguard.engine.service.BotOcrEngine;
 import dev.frostguard.engine.service.ConfigService;
+import dev.frostguard.engine.service.ProfileService;
 import dev.frostguard.vision.convert.GameTimeUtils;
 import dev.frostguard.vision.convert.RegexNumberParser;
 import dev.frostguard.vision.ocr.ResilientOcrExecutor;
@@ -145,6 +146,8 @@ private boolean joinRally;
 private boolean usePets;
 
 private boolean recallTroops;
+
+private boolean sharedEmulator;
 
 private int trapNumber;
 
@@ -540,12 +543,13 @@ private void hydrateConfiguration() {
 
         this.joinFlags = decodeJoinFlags();
         this.currentJoinFlagIndex = 0;
+        this.sharedEmulator = isSharedEmulatorProfile();
 
 
         logDebug(routineLogBearTrapLine(String.format(
-                "Configuration loaded - Trap: %d, PrepTime: %dmin, OwnRally: %s (flag:%d), JoinRally: %s (flags:%s), Pets: %s, Recall: %s",
+                "Configuration loaded - Trap: %d, PrepTime: %dmin, OwnRally: %s (flag:%d), JoinRally: %s (flags:%s), Pets: %s, Recall: %s, SharedEmulator: %s",
                 trapNumber, trapPreparationTime, callOwnRally, ownRallyFlag, joinRally, joinFlags, usePets,
-                recallTroops)));
+                recallTroops, sharedEmulator)));
     }
 
 private int resolveNextJoinFlag() {
@@ -707,8 +711,10 @@ private int inspectFreeMarches() {
     }
 
 private void handleJoinRallies2() {
-        if (!joinRally) {
-            return;
+        if (!joinRally || sharedEmulator) {
+            if (sharedEmulator) {
+                logInfo(routineLogBearTrapLine("Skipping rally joining because this profile shares an emulator with another account."));
+            }
         }
 
         try {
@@ -828,6 +834,16 @@ private TrapTimingShape computeTrapTiming() {
 private int resolveConfigInt(ConfigurationKeyEnum key, int defaultValue) {
         Integer value = profile.getConfig(key, Integer.class);
         return (value != null) ? value : defaultValue;
+    }
+
+private boolean isSharedEmulatorProfile() {
+        if (profile == null || profile.getEmulatorNumber() == null || profile.getEmulatorNumber().isBlank()) {
+            return false;
+        }
+        return ProfileService.obtain().fetchAllAccounts().stream()
+                .filter(other -> other != null && other.getId() != null && !other.getId().equals(profile.getId()))
+                .filter(other -> profile.getEmulatorNumber().equals(other.getEmulatorNumber()))
+                .anyMatch(other -> Boolean.TRUE.equals(other.getEnabled()));
     }
 
 private void recallMarchFlow() {

@@ -13,6 +13,7 @@ import dev.frostguard.data.repository.DailyTaskRepository;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
+import dev.frostguard.engine.schedule.GatherQueuePolicy;
 import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.schedule.TaskQueue;
 import dev.frostguard.engine.service.StaminaService;
@@ -41,7 +42,7 @@ private final DailyTaskRepository iDailyTaskRepository = DailyTaskRepository.get
 
 private boolean marchQueueLimitReached;
 
-private boolean beastMarchSent;
+	private boolean deferGatherForPendingTasks;
 
 private boolean autoJoinDisabledForIntel;
 
@@ -66,6 +67,8 @@ private boolean explorationsEnabled;
 private boolean isAutoJoinTaskEnabled;
 
 private boolean processingTask;
+
+private boolean beastMarchSent;
 
 private TaskStateData autoJoinTask;
 
@@ -103,6 +106,15 @@ public IntelligenceRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 				logDebug(routineLogIntelligenceLine("Could not disable auto-join, proceeding anyway."));
 		}
 
+
+		deferGatherForPendingTasks = GatherQueuePolicy.shouldDeferGatherForPendingTasks(List.of(
+				TpDailyTaskEnum.BEAR_TRAP,
+				TpDailyTaskEnum.INTEL));
+		if (deferGatherForPendingTasks) {
+			logInfo(routineLogIntelligenceLine("Higher-priority march tasks are pending. Deferring gather work for this run."));
+			processingTask = false;
+			return;
+		}
 
 		if (recallGatherTroopsFlow) {
 			logInfo(routineLogIntelligenceLine("Recall gather troops enabled. Recalling all gather troops..."));

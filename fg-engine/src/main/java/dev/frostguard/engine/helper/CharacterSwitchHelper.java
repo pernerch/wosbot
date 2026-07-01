@@ -1,16 +1,20 @@
 package dev.frostguard.engine.helper;
 
-import dev.frostguard.vision.ocr.ResilientOcrExecutor;
-import dev.frostguard.api.configs.TemplatesEnum;
-import dev.frostguard.engine.emulator.EmulatorController;
-import dev.frostguard.vision.logging.ProfileContextLogger;
-import dev.frostguard.api.domain.*;
-import dev.frostguard.engine.service.BotOcrEngine;
-import dev.frostguard.engine.nav.CommonGameAreas;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+
+import dev.frostguard.api.configs.TemplatesEnum;
+import dev.frostguard.api.domain.AccountDescriptor;
+import dev.frostguard.api.domain.AreaData;
+import dev.frostguard.api.domain.ImageSearchResultData;
+import dev.frostguard.api.domain.PointData;
+import dev.frostguard.api.domain.TesseractSettingsData;
+import dev.frostguard.engine.emulator.EmulatorController;
+import dev.frostguard.engine.nav.CommonGameAreas;
+import dev.frostguard.engine.service.BotOcrEngine;
+import dev.frostguard.vision.logging.ProfileContextLogger;
+import dev.frostguard.vision.ocr.ResilientOcrExecutor;
 
 // Handles character verification and switching via the in-game profile menu.
 public class CharacterSwitchHelper {

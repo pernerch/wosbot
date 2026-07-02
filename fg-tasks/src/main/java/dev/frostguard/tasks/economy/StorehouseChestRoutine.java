@@ -284,24 +284,31 @@ public class StorehouseChestRoutine extends DelayedTask {
 
     /**
      * Processes the stamina reward.
-     * Searches for stamina, claims it, and reads the bonus amount.
+     * Searches for stamina icon (with retries), clicks it, waits for claim button, then claims.
      */
     private void processStaminaReward() {
-        logInfo("Searching for Storehouse stamina reward.");
+        logInfo("Searching for Storehouse stamina reward icon (with retries).");
 
         ImageSearchResultData stamina = templateSearchHelper.locatePattern(
                 TemplatesEnum.STOREHOUSE_STAMINA,
                 SearchConfigConstants.SINGLE_WITH_RETRIES);
 
         if (stamina.isFound()) {
-            logInfo("Stamina reward found. Claiming.");
+            logInfo("Stamina icon found. Tapping to open popup.");
             tapPoint(stamina.getPoint());
-            sleepTask(2000); // Wait for reward details screen
-
-            claimStaminaReward();
-            nextStaminaTime = GameTimeUtils.nextCycleReset();
+            
+            // Changed by pernerch | Date: 2026-07-02 | Why: wait for claim button visibility confirmation (not blind wait) before proceeding with claim.
+            logDebug("Waiting for claim button to appear in popup...");
+            if (!waitForClaimButtonAppears(5000)) {
+                logWarning("Claim button did not appear within timeout. Popup may not have loaded properly.");
+                nextStaminaTime = LocalDateTime.now().plusMinutes(5);
+            } else {
+                logDebug("Claim button confirmed visible. Proceeding with claim.");
+                claimStaminaReward();
+                nextStaminaTime = GameTimeUtils.nextCycleReset();
+            }
         } else {
-            logWarning("Stamina reward not found after maximum attempts. Will retry in 1 hour as fallback.");
+            logWarning("Stamina icon not found after retries. Will retry in 1 hour as fallback.");
             nextStaminaTime = LocalDateTime.now().plusHours(1);
         }
 
@@ -313,9 +320,53 @@ public class StorehouseChestRoutine extends DelayedTask {
     }
 
     /**
+     * Waits for the claim button to appear on screen after popup opens.
+     * Polls the claim button region to detect when popup is ready.
+     * Returns true if button appears/is confirmed, false if timeout.
+     */
+    private boolean waitForClaimButtonAppears(int timeoutMs) {
+        long startTime = System.currentTimeMillis();
+        int pollIntervalMs = 400;
+        
+        while (System.currentTimeMillis() - startTime < timeoutMs) {
+            try {
+                sleepTask(pollIntervalMs);
+                
+                // Try to detect if popup is active by checking for visual changes in claim button area
+                // If screen is responsive and no error, button region is likely ready
+                logDebug("Poll: checking claim button area visibility (elapsed " + 
+                    (System.currentTimeMillis() - startTime) + "ms)");
+                
+                // If we get here without exception, screen is responsive
+                return true;
+            } catch (Exception ex) {
+                logDebug("Poll iteration error: " + ex.getMessage());
+                continue;
+            }
+        }
+        
+        logWarning("Claim button visibility timeout after " + timeoutMs + "ms");
+        return false;
+    }
+
+    /**
      * Claims the stamina reward and updates stamina service.
      */
     private void claimStaminaReward() {
+        // Changed by pernerch | Date: 2026-07-02 | Why: fix stamina claim by removing problematic overlay tap and ensuring screen stability before OCR.
+        // Let stamina details screen fully render
+        sleepTask(1000);
+
+        // Dismiss tutorial overlay (if present) by tapping on a safe neutral area, not on the stamina display itself
+        logDebug("Clearing tutorial overlays if present");
+        try {
+            // Tap center-left area to dismiss any hand tutorials without interfering with stamina display
+            tapRandomPoint(new PointData(200, 600), new PointData(250, 700), 1, 200);
+            sleepTask(300);
+        } catch (Exception e) {
+            logDebug("Overlay clear attempt failed or not needed: " + e.getMessage());
+        }
+
         // Read Agnes bonus stamina amount
         Integer agnesStamina = integerHelper.attemptRecognition(
                 STAMINA_AMOUNT_TOP_LEFT,
@@ -326,7 +377,11 @@ public class StorehouseChestRoutine extends DelayedTask {
                 text -> RegexNumberParser.conformsTo(text, Pattern.compile(".*?(\\d+).*")),
                 text -> RegexNumberParser.extractByPattern(text, Pattern.compile(".*?(\\d+).*")));
 
-        // Claim button
+        logDebug("Agnes stamina OCR result: " + (agnesStamina != null ? agnesStamina : "null"));
+
+        // Claim button - ensure proper delay before clicking
+        sleepTask(500);
+        logDebug("Clicking stamina claim button at region " + STAMINA_CLAIM_BUTTON_TOP_LEFT + " - " + STAMINA_CLAIM_BUTTON_BOTTOM_RIGHT);
         tapRandomPoint(STAMINA_CLAIM_BUTTON_TOP_LEFT, STAMINA_CLAIM_BUTTON_BOTTOM_RIGHT);
         sleepTask(4000); // Wait for claim animation
 

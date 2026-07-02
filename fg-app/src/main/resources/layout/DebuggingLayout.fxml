@@ -49,10 +49,13 @@
             </VBox>
                         
             <!-- Image Recognition Tools -->
-            <VBox spacing="12.0" styleClass="module-card">
+            <!-- pernerch/2026-07-02: Fixed debugging UI - templates list now visible only when "Template Search" is selected -->
+            <VBox spacing="12.0" styleClass="module-card" VBox.vgrow="ALWAYS">
                 <Label text="Image Recognition" styleClass="module-title"/>
-                <TextField fx:id="searchTextField" promptText="Search template..." styleClass="text-field"/>
-                <ListView fx:id="templateListView" prefHeight="150" styleClass="list-view"/>
+                <!-- pernerch/2026-07-02: Template search field initially hidden, shown via listener when action changes -->
+                <TextField fx:id="searchTextField" promptText="Search template..." styleClass="text-field" visible="false" managed="false"/>
+                <!-- pernerch/2026-07-02: Template list grows to fill available space and is visible only for Template Search mode -->
+                <ListView fx:id="templateListView" VBox.vgrow="ALWAYS" styleClass="list-view" visible="false" managed="false"/>
                 <HBox spacing="10" alignment="CENTER_LEFT">
                     <ComboBox fx:id="actionComboBox" maxWidth="Infinity" promptText="Choose Action" styleClass="combo-box" HBox.hgrow="ALWAYS"/>
                     <Button fx:id="btnRunAction" mnemonicParsing="false" text="Run" onAction="#handleRunAction" styleClass="compact-button"/>

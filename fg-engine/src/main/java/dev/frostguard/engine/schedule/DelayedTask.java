@@ -402,9 +402,14 @@ public abstract class DelayedTask implements Runnable, Delayed {
     }
 
     // ── logging ─────────────────────────────────────────────────────
+    // Changed by pernerch | Date: 2026-07-02 | Why: Ensure consistent profile name in logs for multi-profile 
+    // emulator debugging. All log levels now include profile name for clarity when multiple profiles 
+    // execute tasks on the same emulator (critical for detecting profile-switch race conditions).
 
     public void logInfo(String message) {
-        logger.info(message);
+        // Changed: Include profile name in INFO logs for consistency across all log levels.
+        // This is critical for multi-profile debugging where multiple TaskQueues run concurrently.
+        logger.info(profile.getName() + " - " + message);
         loggingService.emit(TpMessageSeverityEnum.INFO, taskName, profile.getName(), message);
     }
 

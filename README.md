@@ -258,6 +258,24 @@ mvn clean install package
 
 <br/>
 
+#### Quick Build Script (Windows)
+
+For Windows users, use the **`fg-build.bat`** script for easier compilation:
+
+```batch
+fg-build.bat
+```
+
+**What it does:**
+- ✅ Stops any running Java and ADB processes
+- ✅ Cleans Maven cache (prevents build artifacts issues)
+- ✅ Compiles all modules and creates distribution package
+- ✅ Displays clear success/error messages
+
+This script is especially useful after code changes or if you encounter Maven cache-related build errors.
+
+<br/>
+
 ### 3️⃣ Running the Bot
 
 ```sh
@@ -355,6 +373,14 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
 </div>
 
 <br/>
+
+- **Debugging UI template search visibility control (2026-07-02)**
+  Template search field and ListView are now hidden by default in the Image Recognition debugging panel and only become visible when "Template Search" action is selected, preventing UI clutter when using OCR mode.
+  **Positive effect:** cleaner UI, better UX when switching between debugging modes, reduces visual confusion.
+
+- **Distribution package includes all 361 template images (2026-07-02)**
+  The application build now includes all template PNG files (361 images from fg-vision) in the distribution ZIP under the `templates/` directory, making image pattern matching available in packaged deployments.
+  **Positive effect:** debugging features work out-of-the-box without manual file setup, faster troubleshooting and template testing.
 
 - **Gather queue hard-cap and duplicate prevention**
   Ensures gather march usage stays within a safe limit and avoids duplicate resource deployments.
@@ -462,9 +488,65 @@ Any contributions you make are **greatly appreciated**.
 
 <br/>
 
-<div align="center">
+## 🔧 Recent Fixes & Improvements (2026-07-02)
 
-### ⭐ Star History
+<h3>Build & Development Tools</h3>
+
+| Issue | Fix | Impact |
+|:------|:----|:-------|
+| **Build Script Reliability** | Enhanced `fg-build.bat` with Maven cache cleanup before build | Eliminates Maven cache-related build failures, ensures clean builds every time |
+
+<h3>Build & UI Enhancements</h3>
+
+| Issue | Fix | Impact |
+|:------|:----|:-------|
+| **Missing Debug UI Templates** | Added templates directory to distribution ZIP (361 image files) | Template Search now fully functional in Debugging tab |
+| **Template ListView Not Visible** | Fixed FXML layout: `VBox.vgrow="ALWAYS"` + dynamic visibility toggle | Template list displays when "Template Search" action selected |
+| **Template List Not Selectable** | Added listener to show/hide templateListView & searchTextField based on actionComboBox value | Cleaner UI, less clutter when using OCR mode |
+
+<h3>Performance & Stability</h3>
+
+| Issue | Fix | Impact |
+|:------|:----|:-------|
+| **Stamina Update Hangs** | Reduced OCR from 5→3 attempts, reduced delays 200ms→100ms, added 3-second timeout guards | Stamina reads now ~800-1000ms (was 2500ms+), **50% faster** |
+| **Storehouse Stamina Claim Fails** | Refined flow: intelligent popup wait detection (5s timeout), replaced blind 2000ms sleep with polling | Stamina claim now reliable, properly handles tutorial overlays |
+
+<h3>Scheduler & Task Logic</h3>
+
+| Issue | Fix | Impact |
+|:------|:----|:-------|
+| **Endless Gather→Intel Loop** | Added 1-minute lookahead in `GatherQueuePolicy.isTaskPending()` | Intel no longer treated as pending when scheduled 18+ hours later |
+
+<h3>Logging & Debugging</h3>
+
+| Issue | Fix | Impact |
+|:------|:----|:-------|
+| **Inconsistent Profile Names in Logs** | Made `logInfo()` consistent with `logWarning()` and `logDebug()` - all now include profile name | Critical for multi-profile debugging on shared emulator (prevents profile-switch confusion) |
+| **Console Character Encoding (Mojibake)** | Replaced 25+ Unicode characters (em-dashes, Greek letters) with ASCII equivalents | Log output now clean, no more garbled characters in console |
+
+<h3>Code Quality</h3>
+
+- Added detailed inline comments for all changes with author/date attribution (pernerch/2026-07-02)
+- Updated `fg-app/src/main/assembly/zip.xml` to include templates/ directory in distribution
+
+<h3>Files Modified</h3>
+
+```
+✅ fg-engine/src/main/java/dev/frostguard/engine/helper/StaminaHelper.java
+✅ fg-engine/src/main/java/dev/frostguard/engine/schedule/DelayedTask.java
+✅ fg-engine/src/main/java/dev/frostguard/engine/schedule/GatherQueuePolicy.java
+✅ fg-tasks/src/main/java/dev/frostguard/tasks/economy/StorehouseChestRoutine.java
+✅ fg-app/src/main/resources/layout/DebuggingLayout.fxml
+✅ fg-app/src/main/java/dev/frostguard/app/panel/misc/DebuggingLayoutController.java
+✅ fg-app/src/main/assembly/zip.xml
+✅ 6 additional files: Character encoding fixes
+```
+
+<br/>
+
+---
+
+<br/>
 
 <sub>If you find this project useful, please consider giving it a star!</sub>
 

@@ -130,14 +130,14 @@ public class TaskQueue {
 
     public synchronized void preemptActiveTask(PreemptionRule rule) {
         DelayedTask replacement = DelayedTaskRegistry.create(rule.getTaskToExecute(), profile);
-        if (replacement == null) { emitWarn("Preemption ignored — no mapping for " + rule.getTaskToExecute()); return; }
+        if (replacement == null) { emitWarn("Preemption ignored - no mapping for " + rule.getTaskToExecute()); return; }
 
         boolean shouldSignal = false;
         ExecutionContext ctx = runningContext;
         if (ctx != null) {
             int runningRank  = rankingStrategy.getPriority(ctx.getTask());
             int incomingRank = rankingStrategy.getPriority(replacement);
-            if (runningRank > incomingRank) { emitInfo("Preemption blocked — active task outranks"); }
+            if (runningRank > incomingRank) { emitInfo("Preemption blocked - active task outranks"); }
             else { emitWarn("Interrupting " + ctx.getTask().getTaskName() + " for: " + rule.getRuleName()); shouldSignal = true; }
         }
 
@@ -227,7 +227,7 @@ public class TaskQueue {
 
             if (statusModel.isPaused())                { onPausedTick(); continue; }
             if (statusModel.isReadyToReconnect() && !deviceBridge.isRunning(profile.getEmulatorNumber())) {
-                emitInfo("Device offline — re-acquiring slot"); acquireSlot();
+                emitInfo("Device offline - re-acquiring slot"); acquireSlot();
             }
             if (enforceSessionCap()) continue;
 
@@ -293,7 +293,7 @@ public class TaskQueue {
             return false;
         }
         if (task.getTpTask() == TpDailyTaskEnum.INITIALIZE && !isInitializeWorthRunning()) {
-            emitInfoTask(task, "Skipping Initialize — no imminent tasks"); return false;
+            emitInfoTask(task, "Skipping Initialize - no imminent tasks"); return false;
         }
         LocalDateTime priorSchedule = task.getScheduled();
         TaskStateData st = recordPreExecution(task);
@@ -427,7 +427,7 @@ public class TaskQueue {
         if (runningContext != null) return;
         if (!statusModel.isIdleTimeExceeded() && statusModel.checkIdleTimeExceeded()) {
             boolean keep = Boolean.TRUE.equals(profile.getConfig(ConfigurationKeyEnum.KEEP_EMULATOR_OPEN_BOOL, Boolean.class));
-            if (keep) { emitInfo("Idle exceeded — keeping device open per config"); statusModel.setIdleTimeExceeded(true); return; }
+            if (keep) { emitInfo("Idle exceeded - keeping device open per config"); statusModel.setIdleTimeExceeded(true); return; }
 
             // Changed by pernerch | Date: 2026-07-02 | Why: keep single-profile-per-emulator
             // setups on the original idle path; only evaluate handover when siblings exist.
@@ -445,7 +445,7 @@ public class TaskQueue {
                     // selected peer queue after slot handover to eliminate idle dead time.
             statusModel.setIdleTimeExceeded(true);
         } else if (statusModel.isIdleTimeExceeded() && LocalDateTime.now().plusMinutes(1).isAfter(statusModel.getDelayUntil())) {
-            emitInfo("Next task approaching — re-acquiring slot"); acquireSlot();
+            emitInfo("Next task approaching - re-acquiring slot"); acquireSlot();
             enqueue(DelayedTaskRegistry.create(TpDailyTaskEnum.INITIALIZE, profile));
             statusModel.setIdleTimeExceeded(false);
         }
@@ -496,7 +496,7 @@ public class TaskQueue {
     private void handoverSlotToPeer(PeerSwitchCandidate candidate) {
         OverdueRunnableSnapshot overdue = candidate.overdue();
         emitInfo(String.format(
-                "Idle exceeded — handing emulator slot to profile '%s' (task=%s, taskPriority=%d, profilePriority=%d, overdue=%ds)",
+                "Idle exceeded - handing emulator slot to profile '%s' (task=%s, taskPriority=%d, profilePriority=%d, overdue=%ds)",
                 candidate.account().getName(),
                 overdue.taskType(),
                 overdue.taskPriority(),
@@ -558,7 +558,7 @@ public class TaskQueue {
                 .map(c -> c.get(ConfigurationKeyEnum.PROFILE_MAX_ACTIVE_TIME_MINUTES_INT.name())).map(Integer::parseInt)
                 .orElse(Integer.parseInt(ConfigurationKeyEnum.PROFILE_MAX_ACTIVE_TIME_MINUTES_INT.getDefaultValue())));
         if (LocalDateTime.now().isBefore(sessionOrigin.plusMinutes(cap))) return false;
-        emitInfo("Max session time (" + cap + " min) reached — forcing idle");
+        emitInfo("Max session time (" + cap + " min) reached - forcing idle");
         suspendDevice(statusModel.getDelayUntil(), true);
         statusModel.setIdleTimeExceeded(true);
         return true;

@@ -1,6 +1,7 @@
 package dev.frostguard.tasks.economy;
 
 import java.awt.Color;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -27,11 +28,14 @@ import dev.frostguard.api.domain.AreaData;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.api.domain.TesseractSettingsData;
+import dev.frostguard.engine.nav.CommonGameAreas;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.GatherQueuePolicy;
 import dev.frostguard.engine.schedule.LaunchPoint;
+import dev.frostguard.engine.schedule.TaskQueue;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.service.StatisticsService;
+import net.sourceforge.tess4j.TesseractException;
 
 /**
  * Optimized GatherRoutine: Manages persistent resource rotation, fairness, and
@@ -86,6 +90,7 @@ public class GatherRoutine extends DelayedTask {
     private boolean intelRecall;
     private boolean intelEnabled;
     private boolean gatherSpeed;
+    private boolean autoJoinEnabled;
 
     private List<GatherType> enabledTypes;
     private List<GatherType> rotationPool;
@@ -114,7 +119,7 @@ public class GatherRoutine extends DelayedTask {
             return;
         // 1. Scan Active Marches
         List<GatherType> activeMarches = scanActiveMarches();
-        int activeCount = activeMarches.size();
+        int activeCount = countOccupiedMarchSlotsFlow();
         logInfo(String.format("Active Marches: %d / %d", activeCount, activeQueues));
 
         // Changed by pernerch | Date: 2026-07-02 | Why: continuously self-heal gather state
@@ -127,7 +132,7 @@ public class GatherRoutine extends DelayedTask {
             sleepTask(500);
             earliestReschedule = null;
             activeMarches = scanActiveMarches();
-            activeCount = activeMarches.size();
+            activeCount = countOccupiedMarchSlotsFlow();
             logInfo(String.format("Active Marches after correction: %d / %d", activeCount, activeQueues));
         }
 
@@ -135,6 +140,10 @@ public class GatherRoutine extends DelayedTask {
         // defer based on real active-march timing instead of a blind fixed delay.
         List<TpDailyTaskEnum> pendingHigherPriorityTasks = GatherQueuePolicy.getPendingHigherPriorityMarchTasks(profile);
         if (!pendingHigherPriorityTasks.isEmpty()) {
+            if (pendingHigherPriorityTasks.contains(TpDailyTaskEnum.INTEL) && triggerPendingIntelNowFlow()) {
+                return;
+            }
+
             if (activeCount > 0) {
                 LocalDateTime next = earliestReschedule != null ? earliestReschedule : LocalDateTime.now().plusMinutes(5);
                 logInfo(String.format(
@@ -157,6 +166,32 @@ public class GatherRoutine extends DelayedTask {
             return;
         }
 
+        if (activeCount >= activeQueues && earliestReschedule == null) {
+            if (!autoJoinEnabled) {
+                int recalledBlockedMarches = recallBlockedMarchesWhenAutojoinOffFlow();
+                if (recalledBlockedMarches > 0) {
+                    LocalDateTime retryAt = LocalDateTime.now().plusMinutes(1);
+                    logInfo(String.format(
+                            "Autojoin is disabled and all gather slots are blocked. Recalled %d march(es); rechecking gather in 1 minute at %s.",
+                            recalledBlockedMarches,
+                            GameTimeUtils.formatCountdown(retryAt)));
+                    reschedule(retryAt);
+                    return;
+                }
+            }
+
+            LocalDateTime retryAt = LocalDateTime.now().plusMinutes(5);
+            // Changed by pernerch | Date: 2026-07-02 | Why: when all configured march slots are
+            // occupied by non-gather work, retry after a bounded 5 minutes so returned marches
+            // can be reused immediately without waiting indefinitely for an exact return time.
+            logInfo(String.format(
+                    "All configured march slots are currently occupied outside gather%s. Retrying gather in 5 minutes at %s.",
+                    autoJoinEnabled ? " (autojoin enabled)" : " (autojoin disabled)",
+                    GameTimeUtils.formatCountdown(retryAt)));
+            reschedule(retryAt);
+            return;
+        }
+
         // 2. Fill Queues (Persistent Rotation)
         fillQueues(activeCount, activeMarches);
 
@@ -175,6 +210,7 @@ public class GatherRoutine extends DelayedTask {
         this.intelRecall = get(ConfigurationKeyEnum.INTEL_RECALL_GATHER_TROOPS_BOOL, false);
         this.intelEnabled = get(ConfigurationKeyEnum.INTEL_BOOL, false);
         this.gatherSpeed = get(ConfigurationKeyEnum.GATHER_SPEED_BOOL, false);
+        this.autoJoinEnabled = get(ConfigurationKeyEnum.ALLIANCE_AUTOJOIN_BOOL, false);
 
         this.enabledTypes = Arrays.stream(GatherType.values())
                 .filter(this::isTypeEnabled)
@@ -308,27 +344,89 @@ public class GatherRoutine extends DelayedTask {
 
     private List<GatherType> scanActiveMarches() {
         List<GatherType> active = new ArrayList<>();
-        marchHelper.openLeftMenuCitySection(false);
+        if (enabledTypes == null || enabledTypes.isEmpty() || rotationPool == null) {
+            return active;
+        }
 
-        // Fix: Scan ALL types (even disabled ones) to correctly count occupied slots
-        for (GatherType type : GatherType.values()) {
-            List<ActiveMarchResult> results = checkActiveMarches(type);
-            for (ActiveMarchResult result : results) {
-                if (result.isActive()) {
-                    active.add(type);
-                    if (result.getReturnTime() != null) {
-                        updateReschedule(result.getReturnTime());
-                        logInfo(String.format("%s ACTIVE. Return: %s", type,
-                                GameTimeUtils.formatCountdown(result.getReturnTime())));
-                    } else {
-                        logInfo(String.format("%s ACTIVE. Return time unknown (error reading)", type));
-                    }
-                }
+        // Changed by pernerch | Date: 2026-07-02 | Why: the persisted rotation pool remains the
+        // stable source of fairness state; the wilderness march list is no longer used to locate
+        // resource shortcut templates that do not exist there.
+        for (GatherType type : enabledTypes) {
+            if (!rotationPool.contains(type)) {
+                active.add(type);
             }
         }
 
-        marchHelper.closeLeftMenu();
         return active;
+    }
+
+    // Changed by pernerch | Date: 2026-07-02 | Why: count occupied marches via the march-slot OCR
+    // grid instead of searching shortcut templates in the left menu, so gather startup matches the
+    // original slot-based behavior again.
+    private int countOccupiedMarchSlotsFlow() {
+        marchHelper.openLeftMenuCitySection(false);
+        int occupied = 0;
+
+        try {
+            for (int i = 0; i < CommonGameAreas.MARCH_SLOTS_TOP_LEFT.length; i++) {
+                PointData topLeft = CommonGameAreas.MARCH_SLOTS_TOP_LEFT[i];
+                PointData bottomRight = CommonGameAreas.MARCH_SLOTS_BOTTOM_RIGHT[i];
+                String text = emuManager.readText(EMULATOR_NUMBER, topLeft, bottomRight);
+                if (text == null || !text.toLowerCase().contains("idle")) {
+                    occupied++;
+                }
+            }
+        } catch (IOException | TesseractException e) {
+            logDebug("Could not fully read occupied march slots: " + e.getMessage());
+        } finally {
+            marchHelper.closeLeftMenu();
+        }
+
+        return occupied;
+    }
+
+    // Changed by pernerch | Date: 2026-07-02 | Why: when autojoin is disabled and all gather
+    // slots are blocked, recall already-recallable marches before falling back to a fixed wait.
+    private int recallBlockedMarchesWhenAutojoinOffFlow() {
+        navigationHelper.ensureCorrectScreenLocation(LaunchPoint.WORLD);
+        sleepTask(250);
+        marchHelper.openLeftMenuCitySection(false);
+
+        try {
+            PointData limit = new PointData(415,
+                    MARCH_QUEUES[MARCH_QUEUES.length - 1].bottomRight.getY());
+
+            List<ImageSearchResultData> recallButtons = templateSearchHelper.locateAllPatterns(
+                    TemplatesEnum.MARCHES_AREA_RECALL_BUTTON,
+                    SearchConfig.builder()
+                            .withArea(new AreaData(MARCH_QUEUES[0].topLeft, limit))
+                            .withMaxAttempts(3)
+                            .withMaxResults(MARCH_QUEUES.length)
+                            .withDelay(3)
+                            .build());
+
+            if (recallButtons == null || recallButtons.isEmpty()) {
+                return 0;
+            }
+
+            recallButtons.sort(Comparator.comparingInt(button -> button.getPoint().getY()));
+            int recalled = 0;
+
+            for (ImageSearchResultData recallButton : recallButtons) {
+                if (recallButton == null || !recallButton.isFound()) {
+                    continue;
+                }
+
+                tapRandomPoint(recallButton.getPoint(), recallButton.getPoint(), 1, 200);
+                tapRandomPoint(RECALL_CONFIRM_TL, RECALL_CONFIRM_BR, 1, 200);
+                sleepTask(400);
+                recalled++;
+            }
+
+            return recalled;
+        } finally {
+            marchHelper.closeLeftMenu();
+        }
     }
 
     // Changed by pernerch | Date: 2026-07-02 | Why: enforce configured gather queue size by
@@ -735,6 +833,20 @@ public class GatherRoutine extends DelayedTask {
         } catch (Exception e) {
         }
         return false;
+    }
+
+    // Changed by pernerch | Date: 2026-07-02 | Why: when Gather is blocked by a pending Intel
+    // task, force Intel immediately so it can use free marches now or reschedule itself on low stamina.
+    private boolean triggerPendingIntelNowFlow() {
+        TaskQueue queue = scheduleService.getCoordinator().getQueue(profile.getId());
+        if (queue == null) {
+            logWarning("Intel is pending but no active queue was available to force Intel immediately.");
+            return false;
+        }
+
+        logInfo("Intel is pending. Forcing Intel now so marches are either used immediately or freed until Intel can run again.");
+        queue.runNow(TpDailyTaskEnum.INTEL, true);
+        return true;
     }
 
     private boolean checkGatherSpeedWait() {

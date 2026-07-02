@@ -3,6 +3,7 @@ package dev.frostguard.engine.schedule;
 import dev.frostguard.vision.convert.RegexNumberParser;
 import dev.frostguard.vision.ocr.ResilientOcrExecutor;
 import dev.frostguard.data.repository.ProfileRepository;
+import dev.frostguard.api.configs.ConfigurationKeyEnum;
 import dev.frostguard.api.configs.TpMessageSeverityEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.engine.emulator.EmulatorController;
@@ -23,9 +24,12 @@ import dev.frostguard.engine.schedule.preempt.PreemptionToken;
 import dev.frostguard.engine.schedule.inject.InjectionRule;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -80,6 +84,28 @@ public abstract class DelayedTask implements Runnable, Delayed {
     // Changed by pernerch | Date: 2026-07-02 | Why: force stamina OCR refresh after
     // emulator-local profile switches so stale stamina values cannot leak between accounts.
     private static final Map<String, Long> LAST_ACTIVE_PROFILE_BY_EMULATOR = new ConcurrentHashMap<>();
+
+        // Changed by pernerch | Date: 2026-07-02 | Why: reserve marches for Bear Trap when the
+        // profile is configured to actively play the event, while only blocking rally-heavy events otherwise.
+        private static final EnumSet<TpDailyTaskEnum> BEAR_LOCKED_MARCH_TASKS = EnumSet.of(
+            TpDailyTaskEnum.GATHER_RESOURCES,
+            TpDailyTaskEnum.INTEL,
+            TpDailyTaskEnum.BEAST_HUNTING,
+            TpDailyTaskEnum.EVENT_POLAR_TERROR,
+            TpDailyTaskEnum.EVENT_HERO_MISSION,
+            TpDailyTaskEnum.MERCENARY_EVENT,
+            TpDailyTaskEnum.EVENT_BERSERK_CRYPTID,
+            TpDailyTaskEnum.PET_SKILLS
+        );
+
+        // Changed by pernerch | Date: 2026-07-02 | Why: when Bear Trap is scheduled but not actively
+        // consuming general marches, only rally-heavy event tasks should stay out of the way.
+        private static final EnumSet<TpDailyTaskEnum> BEAR_LOCKED_RALLY_EVENT_TASKS = EnumSet.of(
+            TpDailyTaskEnum.EVENT_POLAR_TERROR,
+            TpDailyTaskEnum.EVENT_HERO_MISSION,
+            TpDailyTaskEnum.MERCENARY_EVENT,
+            TpDailyTaskEnum.EVENT_BERSERK_CRYPTID
+        );
 
     // ── preemption ──────────────────────────────────────────────────
     private PreemptionToken preemptionToken;
@@ -165,6 +191,10 @@ public abstract class DelayedTask implements Runnable, Delayed {
                 staminaHelper.updateStaminaFromProfile();
             }
 
+            if (shouldDeferForBearTrapMarchReservationFlow()) {
+                return;
+            }
+
             if (consumesStamina() && StaminaService.getServices().requiresUpdate(profile.getId())) {
                 staminaHelper.updateStaminaFromProfile();
             }
@@ -207,6 +237,71 @@ public abstract class DelayedTask implements Runnable, Delayed {
 
         Long previousProfileId = LAST_ACTIVE_PROFILE_BY_EMULATOR.put(EMULATOR_NUMBER, profile.getId());
         return previousProfileId != null && !previousProfileId.equals(profile.getId());
+    }
+
+    private boolean shouldDeferForBearTrapMarchReservationFlow() {
+        if (profile == null || tpTask == null || tpTask == TpDailyTaskEnum.BEAR_TRAP) {
+            return false;
+        }
+
+        if (!Boolean.TRUE.equals(profile.getConfig(ConfigurationKeyEnum.BEAR_TRAP_EVENT_BOOL, Boolean.class))) {
+            return false;
+        }
+
+        LocalDateTime referenceTrapTime = profile.getConfig(ConfigurationKeyEnum.BEAR_TRAP_SCHEDULE_DATETIME_STRING, LocalDateTime.class);
+        Integer preparationMinutes = profile.getConfig(ConfigurationKeyEnum.BEAR_TRAP_PREPARATION_TIME_INT, Integer.class);
+        if (referenceTrapTime == null || preparationMinutes == null) {
+            return false;
+        }
+
+        BearTrapHelper.WindowResult window = BearTrapHelper.calculateWindow(
+            referenceTrapTime.atZone(ZoneId.of("UTC")).toInstant(),
+            preparationMinutes);
+        if (window.getState() != TimeWindowHelper.WindowState.INSIDE) {
+            return false;
+        }
+
+        boolean joinRally = Boolean.TRUE.equals(profile.getConfig(ConfigurationKeyEnum.BEAR_TRAP_JOIN_RALLY_BOOL, Boolean.class));
+        boolean callOwnRally = Boolean.TRUE.equals(profile.getConfig(ConfigurationKeyEnum.BEAR_TRAP_CALL_RALLY_BOOL, Boolean.class));
+
+        boolean reserveAllMarchesForBear = joinRally;
+        if (reserveAllMarchesForBear) {
+            return deferTaskForBearWindowFlow(BEAR_LOCKED_MARCH_TASKS.contains(tpTask),
+                    "Bear Trap is active soon and configured to use marches. Reserving all marches for Bear only.");
+        }
+
+        boolean reserveRallyTasksOnly = callOwnRally || BEAR_LOCKED_RALLY_EVENT_TASKS.contains(tpTask);
+        if (!reserveRallyTasksOnly) {
+            return false;
+        }
+
+        return deferTaskForBearWindowFlow(BEAR_LOCKED_RALLY_EVENT_TASKS.contains(tpTask),
+                "Bear Trap is active soon. Blocking rally-heavy event tasks so Bear keeps march priority.");
+    }
+
+    private boolean deferTaskForBearWindowFlow(boolean shouldDefer, String reason) {
+        if (!shouldDefer) {
+            return false;
+        }
+
+        LocalDateTime retryAt = resolveBearWindowReleaseTimeFlow();
+        reschedule(retryAt);
+        logInfo(reason + " Rescheduling " + taskName + " for " + retryAt.format(DATETIME_FORMATTER));
+        return true;
+    }
+
+    private LocalDateTime resolveBearWindowReleaseTimeFlow() {
+        LocalDateTime referenceTrapTime = profile.getConfig(ConfigurationKeyEnum.BEAR_TRAP_SCHEDULE_DATETIME_STRING, LocalDateTime.class);
+        Integer preparationMinutes = profile.getConfig(ConfigurationKeyEnum.BEAR_TRAP_PREPARATION_TIME_INT, Integer.class);
+        if (referenceTrapTime == null || preparationMinutes == null) {
+            return LocalDateTime.now().plusMinutes(30);
+        }
+
+        BearTrapHelper.WindowResult window = BearTrapHelper.calculateWindow(
+                referenceTrapTime.atZone(ZoneId.of("UTC")).toInstant(),
+                preparationMinutes);
+        Instant releaseInstant = window.getCurrentWindowEnd().plus(Duration.ofMinutes(1));
+        return LocalDateTime.ofInstant(releaseInstant, ZoneId.systemDefault());
     }
 
     private void verifyGameProcessActive() {

@@ -146,14 +146,14 @@ public class StaminaHelper {
             int regenMinutes = staminaRegenerationTime(level, refresh);
             LocalDateTime retry = LocalDateTime.now().plusMinutes(regenMinutes);
             cb.reschedule(retry);
-            emitWarn("Insufficient (" + level + "/" + min + ") — retry " +
+                emitWarn("Insufficient (" + level + "/" + min + ") - retry " +
                     GameTimeUtils.formatCountdown(retry));
             return false;
         }
 
         if (verifyMarches && !marchSupport.checkMarchesAvailable()) {
             cb.reschedule(LocalDateTime.now().plusMinutes(1));
-            emitWarn("No march slots — retry in 1 min");
+            emitWarn("No march slots - retry in 1 min");
             return false;
         }
 

@@ -181,7 +181,7 @@ public ManualRallyJoinRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask)
 
 
                     returnTime = LocalDateTime.now().plusSeconds(travelTimeSeconds * 2).plusMinutes(5);
-                    logInfo(routineLogManualRallyJoinLine("Travel time: " + travelTimeSeconds + "s ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ march expected back at " + returnTime));
+                    logInfo(routineLogManualRallyJoinLine("Travel time: " + travelTimeSeconds + "s -> march expected back at " + returnTime));
                 } else {
 
 

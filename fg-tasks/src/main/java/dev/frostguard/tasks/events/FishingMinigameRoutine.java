@@ -122,11 +122,11 @@ public class FishingMinigameRoutine extends DelayedTask {
 
         // â”€â”€ 0. Wait for the hook to appear (game loading buffer) â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (!waitForHook()) {
-            logInfo("Fishing Minigame: hook never appeared â€” aborting.");
+            logInfo("Fishing Minigame: hook never appeared - aborting.");
             reschedule(LocalDateTime.now().plusHours(6));
             return;
         }
-        logInfo("Fishing Minigame: hook detected â€” entering game loop.");
+        logInfo("Fishing Minigame: hook detected - entering game loop.");
 
         long start = System.currentTimeMillis();
         int ticks = 0;
@@ -185,7 +185,7 @@ public class FishingMinigameRoutine extends DelayedTask {
                 hookMisses++;
                 double bestConf = (hookResult != null) ? hookResult.getMatchPercentage() : 0;
                 if (hookMisses >= MAX_HOOK_MISS) {
-                    logInfo(String.format("T%d | NO HOOK (best=%.1f%%) â€” lost %d ticks, game ended.",
+                        logInfo(String.format("T%d | NO HOOK (best=%.1f%%) - lost %d ticks, game ended.",
                             ticks, bestConf, hookMisses));
                     break;
                 }
@@ -194,15 +194,15 @@ public class FishingMinigameRoutine extends DelayedTask {
                 if (swipedLastTick && hookMisses == 1) {
                     int predicted = hookCx + Math.round(lastSwipeDeltaX * SWIPE_OVERSHOOT);
                     predicted = Math.max(HOOK_W / 2, Math.min(SCREEN_W - HOOK_W / 2, predicted));
-                    logInfo(String.format("T%d | NO HOOK (best=%.1f%%) â€” post-swipe predict X=%d (was %d, Î”=%+d) | cap=%dms hook=%dms",
+                        logInfo(String.format("T%d | NO HOOK (best=%.1f%%) - post-swipe predict X=%d (was %d, delta=%+d) | cap=%dms hook=%dms",
                             ticks, bestConf, predicted, hookCx, lastSwipeDeltaX, capMs, hookMs));
                     hookCx = predicted;
                 } else {
-                    logInfo(String.format("T%d | NO HOOK (best=%.1f%%) â€” miss %d/%d | cap=%dms hook=%dms",
+                        logInfo(String.format("T%d | NO HOOK (best=%.1f%%) - miss %d/%d | cap=%dms hook=%dms",
                             ticks, bestConf, hookMisses, MAX_HOOK_MISS, capMs, hookMs));
                 }
                 swipedLastTick = false;
-                // Fall through â€” still scan for fish and compute danger zones
+                // Fall through - still scan for fish and compute danger zones
                 // using last known / predicted hook position.
             }
 
@@ -597,7 +597,7 @@ public class FishingMinigameRoutine extends DelayedTask {
         if (cursor < maxX) gaps.add(new int[]{cursor, maxX});
 
         if (gaps.isEmpty()) {
-            logInfo("No safe gap â€” falling back to screen centre.");
+            logInfo("No safe gap - falling back to screen center.");
             return SCREEN_W / 2;
         }
 

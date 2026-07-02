@@ -1,5 +1,6 @@
 package dev.frostguard.engine.schedule;
 
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -14,6 +15,8 @@ public final class GatherQueuePolicy {
 
     // Changed by pernerch | Date: 2026-07-02 | Why: hard-cap gather marches at 4 to prevent march-slot overcommitment.
     private static final int HARD_QUEUE_CAP = 4;
+    // Changed by pernerch | Date: 2026-07-02 | Why: only treat future high-priority tasks as blocking gather when they are actually imminent.
+    private static final int PENDING_TASK_LOOKAHEAD_MINUTES = 1;
     // Changed by pernerch | Date: 2026-07-02 | Why: prioritize Bear Trap/Intel so gather can defer when needed.
     private static final Set<TpDailyTaskEnum> HIGH_PRIORITY_MARCH_TASKS = Set.of(
             TpDailyTaskEnum.BEAR_TRAP,
@@ -72,6 +75,21 @@ public final class GatherQueuePolicy {
             return false;
         }
         var state = TaskManagementService.shared().lookupTaskState(profile.getId(), task.getId());
-        return state != null && (state.isScheduled() || state.isExecuting());
+        if (state == null) {
+            return false;
+        }
+        if (state.isExecuting()) {
+            return true;
+        }
+        if (!state.isScheduled()) {
+            return false;
+        }
+
+        LocalDateTime nextExecutionTime = state.getNextExecutionTime();
+        if (nextExecutionTime == null) {
+            return true;
+        }
+
+        return !nextExecutionTime.isAfter(LocalDateTime.now().plusMinutes(PENDING_TASK_LOOKAHEAD_MINUTES));
     }
 }

@@ -130,7 +130,7 @@ public class NavigationHelper {
     // ── screen location ──────────────────────────────────────────────
 
     public void ensureCorrectScreenLocation(LaunchPoint target) {
-        broadcastDebug("Locating screen — need " + target);
+        broadcastDebug("Locating screen - need " + target);
         int budget = 10;
         int pass = 1;
         while (pass <= budget) {
@@ -171,9 +171,9 @@ public class NavigationHelper {
                 }
             }
 
-            // unknown screen — go back
+            // unknown screen - go back
             if (!atHome && !atWorld) {
-                broadcastDebug("Unknown screen — back (" + pass + "/" + budget + ")");
+                broadcastDebug("Unknown screen - back (" + pass + "/" + budget + ")");
                 emu.pressBack(device);
                 interruptibleWait(300);
             }

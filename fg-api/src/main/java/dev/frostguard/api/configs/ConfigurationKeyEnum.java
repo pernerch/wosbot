@@ -195,6 +195,9 @@ public enum ConfigurationKeyEnum {
     GATHER_MEAT_LEVEL_INT           ("8",                   Integer.class,  ConfigCategory.GATHERING),
     GATHER_REMOVE_HEROS_BOOL        ("true",                Boolean.class,  ConfigCategory.GATHERING),
     GATHER_ROTATION_POOL            ("",                    String.class,   ConfigCategory.GATHERING),
+    // pernerch/2026-07-02: timestamp of the last gather recall (Intel/Bear), stored per-profile task instance
+    // to track troop return window and avoid re-deploying before troops are home.
+    GATHER_LAST_RECALL_TIME_STRING  ("",                    String.class,   ConfigCategory.GATHERING),
     GATHER_SPEED_BOOL               ("false",               Boolean.class,  ConfigCategory.GATHERING),
     GATHER_SPEED_BOOST_TYPE_STRING  ("24h (600 gems)",      String.class,   ConfigCategory.GATHERING),
     GATHER_TASK_BOOL                ("false",               Boolean.class,  ConfigCategory.GATHERING),

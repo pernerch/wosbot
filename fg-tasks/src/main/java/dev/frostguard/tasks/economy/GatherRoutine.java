@@ -49,6 +49,14 @@ public class GatherRoutine extends DelayedTask {
     private static final boolean DEFAULT_REMOVE_HEROES = false;
     private static final boolean DEFAULT_INTEL_SMART = false;
     private static final int PENDING_HIGH_PRIORITY_RETRY_MINUTES = 5;
+    // pernerch/2026-07-02: lookahead for dual-event detection (Intel + Bear within this window → defer both)
+    private static final int DUAL_EVENT_LOOKAHEAD_MINUTES = 15;
+    // pernerch/2026-07-02: initial margin added after max march return time before re-deploying
+    private static final int TROOP_RETURN_MARGIN_MINUTES = 2;
+    // pernerch/2026-07-02: retry interval when recalled troops are still marching home
+    private static final int TROOP_RETURN_RETRY_MINUTES = 1;
+    // pernerch/2026-07-02: Bear Trap active duration (30 min) used to estimate end time for defer calculation
+    private static final int BEAR_TRAP_DURATION_MINUTES = 30;
 
     // Region Constants (UI)
     private static final MarchQueueRegion[] MARCH_QUEUES = {
@@ -96,6 +104,10 @@ public class GatherRoutine extends DelayedTask {
     private List<GatherType> rotationPool;
     private LocalDateTime earliestReschedule;
     private ResilientOcrExecutor<LocalDateTime> textHelper;
+    // pernerch/2026-07-02: stored per-profile task instance (one GatherRoutine per profile).
+    // Records when gather troops were recalled by Intel or Bear Trap so we can wait for them
+    // to return before re-deploying. Also persisted to profile config for crash recovery.
+    private LocalDateTime lastRecallTime;
 
     public GatherRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         super(profile, tpTask);
@@ -113,7 +125,14 @@ public class GatherRoutine extends DelayedTask {
             return;
         }
 
-        if (checkIntelConflict())
+        // pernerch/2026-07-02: after an Intel/Bear recall, wait until troops are home before re-deploying.
+        // Checks the per-profile recall timestamp and extends by 1 minute if troops are still out.
+        if (checkTroopReturnPending())
+            return;
+
+        // pernerch/2026-07-02: replaces blind 35-min reschedule with smart dual-event (Intel+Bear)
+        // awareness, actual march recall, and defer calculation based on real event end times.
+        if (checkHighPriorityEventConflict())
             return;
         if (checkGatherSpeedWait())
             return;
@@ -180,14 +199,26 @@ public class GatherRoutine extends DelayedTask {
                 }
             }
 
-            LocalDateTime retryAt = LocalDateTime.now().plusMinutes(5);
-            // Changed by pernerch | Date: 2026-07-02 | Why: when all configured march slots are
-            // occupied by non-gather work, retry after a bounded 5 minutes so returned marches
-            // can be reused immediately without waiting indefinitely for an exact return time.
-            logInfo(String.format(
-                    "All configured march slots are currently occupied outside gather%s. Retrying gather in 5 minutes at %s.",
-                    autoJoinEnabled ? " (autojoin enabled)" : " (autojoin disabled)",
-                    GameTimeUtils.formatCountdown(retryAt)));
+            // pernerch/2026-07-02: read the actual march return times so gather wakes up exactly
+            // when a slot becomes free, not on a blind 5-minute ticker.
+            // Only fall back to 5-min polling if the return is ≤10 min away (near-term uncertainty).
+            LocalDateTime latestReturn = resolveLatestMarchReturnTime();
+            LocalDateTime retryAt;
+            if (latestReturn != null && ChronoUnit.MINUTES.between(LocalDateTime.now(), latestReturn) > 10) {
+                retryAt = latestReturn.plusMinutes(TROOP_RETURN_MARGIN_MINUTES);
+                logInfo(String.format(
+                        "All configured march slots are currently occupied outside gather%s. " +
+                        "Scheduling next gather check at march return time %s.",
+                        autoJoinEnabled ? " (autojoin enabled)" : " (autojoin disabled)",
+                        GameTimeUtils.formatCountdown(retryAt)));
+            } else {
+                retryAt = LocalDateTime.now().plusMinutes(5);
+                logInfo(String.format(
+                        "All configured march slots are currently occupied outside gather%s. " +
+                        "Return is near or unknown - retrying in 5 minutes at %s.",
+                        autoJoinEnabled ? " (autojoin enabled)" : " (autojoin disabled)",
+                        GameTimeUtils.formatCountdown(retryAt)));
+            }
             reschedule(retryAt);
             return;
         }
@@ -224,6 +255,12 @@ public class GatherRoutine extends DelayedTask {
 
         this.textHelper = new ResilientOcrExecutor<>(provider);
         this.earliestReschedule = null;
+        // pernerch/2026-07-02: restore recall timestamp from profile config so it survives task restarts.
+        String recallTimeStr = profile.getConfig(ConfigurationKeyEnum.GATHER_LAST_RECALL_TIME_STRING, String.class);
+        if (recallTimeStr != null && !recallTimeStr.isEmpty()) {
+            try { this.lastRecallTime = LocalDateTime.parse(recallTimeStr); }
+            catch (Exception ignored) { this.lastRecallTime = null; }
+        }
     }
 
     private boolean isTypeEnabled(GatherType type) {
@@ -818,21 +855,187 @@ public class GatherRoutine extends DelayedTask {
     }
 
     private void finalizeReschedule() {
-        reschedule(earliestReschedule != null ? earliestReschedule : LocalDateTime.now().plusMinutes(5));
+        if (earliestReschedule != null) {
+            reschedule(earliestReschedule);
+            return;
+        }
+        // pernerch/2026-07-02: schedule next run based on when the deployed marches will actually return,
+        // not a fixed 5-minute blind wait. Reads OCR return times from active gather march rows.
+        LocalDateTime maxReturnTime = resolveLatestMarchReturnTime();
+        if (maxReturnTime != null) {
+            LocalDateTime scheduleAt = maxReturnTime.plusMinutes(TROOP_RETURN_MARGIN_MINUTES);
+            logInfo(String.format("All gather slots filled. Next gather check at %s (latest march return + %d min margin).",
+                GameTimeUtils.formatCountdown(scheduleAt), TROOP_RETURN_MARGIN_MINUTES));
+            reschedule(scheduleAt);
+        } else {
+            reschedule(LocalDateTime.now().plusMinutes(5));
+        }
     }
 
-    private boolean checkIntelConflict() {
-        if ((!intelSmart && !intelRecall) || !intelEnabled)
-            return false;
+    // pernerch/2026-07-02: reads active gather march candidates and returns the latest return time,
+    // used to schedule the next gather run after all slots are filled.
+    private LocalDateTime resolveLatestMarchReturnTime() {
         try {
-            DailyTask t = dailyTaskRepository.findByAccountIdAndTaskType(profile.getId(), TpDailyTaskEnum.INTEL);
-            if (t != null && ChronoUnit.MINUTES.between(LocalDateTime.now(), t.getScheduledAt()) < 5) {
-                reschedule(LocalDateTime.now().plusMinutes(35));
-                return true;
-            }
+            List<ActiveGatherMarchCandidate> candidates = collectActiveGatherMarchCandidatesFlow();
+            return candidates.stream()
+                .map(ActiveGatherMarchCandidate::returnTime)
+                .max(Comparator.naturalOrder())
+                .orElse(null);
         } catch (Exception e) {
+            logDebug("Could not resolve latest march return time: " + e.getMessage());
+            return null;
         }
-        return false;
+    }
+
+    // pernerch/2026-07-02: replaces blind checkIntelConflict(). Handles:
+    // - Intel (full recall): recall all gather troops, defer past Intel end
+    // - Intel (smart): only defer, no full recall
+    // - Bear Trap (with recall+rally): recall all gather troops, defer past Bear end
+    // - Dual-event (Intel+Bear both within 15 min): defer past BOTH to avoid pointless round-trips
+    private boolean checkHighPriorityEventConflict() {
+        boolean intelNeedsFullRecall = intelEnabled && intelRecall && !intelSmart;
+        boolean intelNeedsSmartDefer = intelEnabled && (intelRecall || intelSmart);
+        boolean intelPendingSoon     = intelNeedsSmartDefer
+                                       && isEventPendingWithin(TpDailyTaskEnum.INTEL, DUAL_EVENT_LOOKAHEAD_MINUTES);
+
+        boolean bearNeedsRecall  = isBearTrapRecallRequired();
+        boolean bearPendingSoon  = bearNeedsRecall
+                                   && isEventPendingWithin(TpDailyTaskEnum.BEAR_TRAP, DUAL_EVENT_LOOKAHEAD_MINUTES);
+
+        if (!intelPendingSoon && !bearPendingSoon) return false;
+
+        // Recall gather marches if required by the relevant event
+        if (intelNeedsFullRecall && intelPendingSoon) {
+            logInfo("Intel (full-recall mode) pending within " + DUAL_EVENT_LOOKAHEAD_MINUTES
+                + " min. Recalling all gather marches.");
+            recallAllGatherMarchesAndTrack();
+        } else if (intelPendingSoon) {
+            logInfo("Intel (smart mode) pending within " + DUAL_EVENT_LOOKAHEAD_MINUTES
+                + " min. Deferring gather without full recall (duplicates only).");
+        }
+        if (bearPendingSoon) {
+            logInfo("Bear Trap (recall+rally mode) pending within " + DUAL_EVENT_LOOKAHEAD_MINUTES
+                + " min. Recalling all gather marches.");
+            recallAllGatherMarchesAndTrack();
+        }
+
+        // Compute defer time past all pending high-priority events
+        LocalDateTime deferUntil = computeDeferTimeAfterHighPriorityEvents(intelPendingSoon, bearPendingSoon);
+
+        if (intelPendingSoon && bearPendingSoon) {
+            logInfo(String.format(
+                "Intel AND Bear Trap both pending within %d min. Deferring gather until after both events at %s.",
+                DUAL_EVENT_LOOKAHEAD_MINUTES, GameTimeUtils.formatCountdown(deferUntil)));
+        } else if (intelPendingSoon) {
+            logInfo(String.format("Intel pending within %d min. Deferring gather until %s.",
+                DUAL_EVENT_LOOKAHEAD_MINUTES, GameTimeUtils.formatCountdown(deferUntil)));
+        } else {
+            logInfo(String.format("Bear Trap pending within %d min. Deferring gather until %s.",
+                DUAL_EVENT_LOOKAHEAD_MINUTES, GameTimeUtils.formatCountdown(deferUntil)));
+        }
+        reschedule(deferUntil);
+        return true;
+    }
+
+    // pernerch/2026-07-02: true when Bear Trap is configured to consume ALL gather marches.
+    // Bear with own rally only (no joiners) leaves gather marches free, so no recall needed.
+    private boolean isBearTrapRecallRequired() {
+        boolean bearEnabled  = get(ConfigurationKeyEnum.BEAR_TRAP_EVENT_BOOL, false);
+        if (!bearEnabled) return false;
+        boolean recallTroops = get(ConfigurationKeyEnum.BEAR_TRAP_RECALL_TROOPS_BOOL, false);
+        boolean ownRally     = get(ConfigurationKeyEnum.BEAR_TRAP_CALL_RALLY_BOOL, false);
+        boolean joinRally    = get(ConfigurationKeyEnum.BEAR_TRAP_JOIN_RALLY_BOOL, false);
+        // Recall only needed when bear takes all march slots: recallTroops=true AND (own rally OR join rally)
+        return recallTroops && (ownRally || joinRally);
+    }
+
+    // pernerch/2026-07-02: checks if the given task is scheduled within the next N minutes.
+    private boolean isEventPendingWithin(TpDailyTaskEnum task, int minutes) {
+        try {
+            DailyTask t = dailyTaskRepository.findByAccountIdAndTaskType(profile.getId(), task);
+            if (t == null || t.getScheduledAt() == null) return false;
+            long minutesUntil = ChronoUnit.MINUTES.between(LocalDateTime.now(), t.getScheduledAt());
+            return minutesUntil >= 0 && minutesUntil < minutes;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // pernerch/2026-07-02: recalls all active gather marches and records the recall timestamp.
+    // Timestamp is stored both as instance field (fast) and in profile config (survives restart).
+    private void recallAllGatherMarchesAndTrack() {
+        // Record BEFORE recalling so the return margin counts from now
+        this.lastRecallTime = LocalDateTime.now();
+        profile.setConfig(ConfigurationKeyEnum.GATHER_LAST_RECALL_TIME_STRING, lastRecallTime.toString());
+        setShouldUpdateConfig(true);
+        logInfo("Gather march recall for high-priority event. Recall time recorded: "
+            + lastRecallTime.format(DATETIME_FORMATTER));
+        List<ActiveGatherMarchCandidate> candidates = collectActiveGatherMarchCandidatesFlow();
+        if (candidates.isEmpty()) {
+            logInfo("No active gather marches found to recall.");
+            return;
+        }
+        for (ActiveGatherMarchCandidate c : candidates) {
+            recallGatherMarchByQueueFlow(c, RecallReason.HIGH_PRIORITY_EVENT);
+            sleepTask(300);
+        }
+        logInfo("Recalled " + candidates.size() + " gather march(es) for high-priority event.");
+    }
+
+    // pernerch/2026-07-02: calculates when to resume gather after all pending high-priority events end.
+    // For Intel: scheduled start + 15 min (typical Intel duration). For Bear: scheduled start + 30 min.
+    // Final time gets the troop-return margin added so troops have time to walk home.
+    private LocalDateTime computeDeferTimeAfterHighPriorityEvents(boolean intelPending, boolean bearPending) {
+        LocalDateTime deferUntil = LocalDateTime.now();
+        if (intelPending) {
+            try {
+                DailyTask intel = dailyTaskRepository.findByAccountIdAndTaskType(profile.getId(), TpDailyTaskEnum.INTEL);
+                if (intel != null && intel.getScheduledAt() != null) {
+                    LocalDateTime intelEnd = intel.getScheduledAt().plusMinutes(15);
+                    if (intelEnd.isAfter(deferUntil)) deferUntil = intelEnd;
+                }
+            } catch (Exception ignored) {}
+        }
+        if (bearPending) {
+            try {
+                DailyTask bear = dailyTaskRepository.findByAccountIdAndTaskType(profile.getId(), TpDailyTaskEnum.BEAR_TRAP);
+                if (bear != null && bear.getScheduledAt() != null) {
+                    LocalDateTime bearEnd = bear.getScheduledAt().plusMinutes(BEAR_TRAP_DURATION_MINUTES);
+                    if (bearEnd.isAfter(deferUntil)) deferUntil = bearEnd;
+                }
+            } catch (Exception ignored) {}
+        }
+        return deferUntil.plusMinutes(TROOP_RETURN_MARGIN_MINUTES);
+    }
+
+    // pernerch/2026-07-02: after an Intel or Bear recall, waits for troops to return home before
+    // re-deploying. Uses option B: start with TROOP_RETURN_MARGIN_MINUTES, then +1 min per check
+    // until collectActiveGatherMarchCandidatesFlow() reports zero active gather marches.
+    private boolean checkTroopReturnPending() {
+        if (lastRecallTime == null) return false;
+        // Expire recall state after 2 hours to prevent permanent blocking from stale data
+        if (ChronoUnit.MINUTES.between(lastRecallTime, LocalDateTime.now()) > 120) {
+            clearRecallState();
+            return false;
+        }
+        List<ActiveGatherMarchCandidate> active = collectActiveGatherMarchCandidatesFlow();
+        if (active.isEmpty()) {
+            logInfo("All recalled gather troops have returned home. Clearing recall state and proceeding with fresh deployment.");
+            clearRecallState();
+            return false; // troops home, proceed with normal execute
+        }
+        LocalDateTime retryAt = LocalDateTime.now().plusMinutes(TROOP_RETURN_RETRY_MINUTES);
+        logInfo(String.format(
+            "Recalled gather troops still returning (%d march(es) active). Rechecking in %d min at %s.",
+            active.size(), TROOP_RETURN_RETRY_MINUTES, GameTimeUtils.formatCountdown(retryAt)));
+        reschedule(retryAt);
+        return true;
+    }
+
+    private void clearRecallState() {
+        this.lastRecallTime = null;
+        profile.setConfig(ConfigurationKeyEnum.GATHER_LAST_RECALL_TIME_STRING, "");
+        setShouldUpdateConfig(true);
     }
 
     // Changed by pernerch | Date: 2026-07-02 | Why: when Gather is blocked by a pending Intel
@@ -947,7 +1150,9 @@ public class GatherRoutine extends DelayedTask {
     private enum RecallReason {
         DISABLED_TYPE("disabled-type"),
         DUPLICATE_TYPE("duplicate-type"),
-        OVERFLOW_FALLBACK("overflow-fallback");
+        OVERFLOW_FALLBACK("overflow-fallback"),
+        // pernerch/2026-07-02: march recalled because Intel (full-recall) or Bear Trap (recall+rally) is imminent
+        HIGH_PRIORITY_EVENT("high-priority-event");
 
         private final String logValue;
 

@@ -359,6 +359,14 @@ private String routineLogBearTrapLine(String note) {
     }
 
 private void recallGatherTroopsFlow() {
+        // pernerch/2026-07-02: record recall timestamp in profile config BEFORE recalling.
+        // GatherRoutine reads GATHER_LAST_RECALL_TIME_STRING on startup and uses it to wait
+        // for troops to return home before re-deploying (checkTroopReturnPending).
+        profile.setConfig(
+            dev.frostguard.api.configs.ConfigurationKeyEnum.GATHER_LAST_RECALL_TIME_STRING,
+            java.time.LocalDateTime.now().toString());
+        logInfo(routineLogBearTrapLine("Gather recall timestamp stored for troop-return tracking."));
+
         int attempt = 0;
 
         while (attempt < MAX_GATHER_RECALL_ATTEMPTS_LIMIT) {

@@ -12,17 +12,8 @@ taskkill /F /IM adb.exe >nul 2>&1
 timeout /t 2 >nul
 
 echo.
-echo Cleaning Maven cache...
-call mvn clean
-if errorlevel 1 (
-    echo [ERROR] Maven clean failed!
-    pause
-    exit /b %errorlevel%
-)
-
-echo.
-echo Building project...
-call mvn install package
+echo Building project (clean + install)...
+call mvn clean install package
 if errorlevel 1 (
     echo [ERROR] Build failed!
     pause

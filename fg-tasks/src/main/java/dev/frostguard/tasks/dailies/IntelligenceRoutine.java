@@ -955,67 +955,42 @@ private void manageRescheduling(boolean anyIntelProcessed, boolean nonBeastIntel
 			MarchesAvailable marchesAvailable) {
 		sleepTask(500);
 
+		// Changed by pernerch | Date: 2026-07-02 | Why: implement continuous mission execution
+		// until no marches OR no missions remain, with intelligent rescheduling logic.
+
 		if (!anyIntelProcessed) {
-
-
+			logInfo(routineLogIntelligenceLine("No Intel missions processed this cycle."));
 			tryRescheduleFromCooldownFlow();
-
 			processingTask = false;
 			return;
 		}
 
-
-		if (marchQueueLimitReached && nonBeastIntelProcessed) {
-			if (recallGatherTroopsFlow) {
-				// Changed by pernerch | Date: 2026-07-02 | Why: with Intel recall enabled, immediately
-				// free marches and continue processing instead of waiting for a delayed retry.
-				logInfo(routineLogIntelligenceLine("March queue full after non-beast Intel while recall is enabled. Recalling gather troops and continuing Intel now."));
-				recallGatherTroopsFlow();
-				marchQueueLimitReached = false;
+		// Core logic: if march queue limit reached (no marches available)
+		if (marchQueueLimitReached) {
+			logInfo(routineLogIntelligenceLine("No marches available. Checking if missions remain..."));
+			
+			// Check if any missions still exist on the Intel screen
+			if (hasAnyIntelMissionAvailableFlow()) {
+				// Missions exist but no marches available: reschedule in 5 minutes
+				reschedule(LocalDateTime.now().plusMinutes(5));
+				logInfo(routineLogIntelligenceLine("Missions still available but all marches occupied. Rescheduling Intel in 5 minutes to wait for march availability."));
+				processingTask = false;
+				return;
+			} else {
+				// No marches AND no missions: Intel processing is complete
+				logInfo(routineLogIntelligenceLine("No marches available and no missions remain. Intel processing complete."));
+				tryRescheduleFromCooldownFlow();
+				processingTask = false;
 				return;
 			}
-
-
-			reschedule(LocalDateTime.now().plusMinutes(2));
-			logInfo(routineLogIntelligenceLine("Non-beast intel processed but march queue full. " +
-					"Planning next run in 2 minutes to check for more."));
-
-			processingTask = false;
-			return;
 		}
 
-		if (marchQueueLimitReached && !nonBeastIntelProcessed && !beastMarchSent) {
-
-
-			if (useSmartProcessing && marchesAvailable.rescheduleTo() != null) {
-				reschedule(marchesAvailable.rescheduleTo());
-				logInfo(routineLogIntelligenceLine("March queue is full, and only beasts remain. Planning next run for when marches will be available at "
-						+ marchesAvailable.rescheduleTo()));
-			} else {
-				reschedule(LocalDateTime.now().plusMinutes(2));
-				logInfo(routineLogIntelligenceLine("March queue is full, and only beasts remain. Planning next run in 2 minutes"));
-			}
-
-			processingTask = false;
-			return;
-		}
-
-		if (!beastMarchSent || marchQueueLimitReached) {
-
-
-			reschedule(LocalDateTime.now().plusMinutes(2));
-			logInfo(routineLogIntelligenceLine("Planning next run in 2 minutes to check if any intel got skipped. " +
-					"Beast march sent: " + beastMarchSent + ", March queue full: " + marchQueueLimitReached));
-
-			processingTask = false;
-			return;
-		}
-
-
-		logInfo(routineLogIntelligenceLine("Beast march sent successfully. Continuing processing."));
+		// Marches are still available: continue processing in next iteration
+		// The while(processingTask) loop will run again without stopping
+		logInfo(routineLogIntelligenceLine("Marches available. Continuing Intel mission processing."));
 	}
 
-private boolean handleBeastIntel() {
+	private boolean handleBeastIntel() {
 		intelScreenHelper.ensureOnIntelScreen();
 		boolean beastFound = false;
 

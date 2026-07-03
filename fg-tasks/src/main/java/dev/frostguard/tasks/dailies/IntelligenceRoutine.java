@@ -46,6 +46,14 @@ private static final int JOURNEY_STAMINA_COST_VALUE = 10;
 
 private static final int SMART_PROCESSING_MIN_IDLE_MARCHES_FOR_INTEL = 2;
 
+private static final int MAX_INTEL_MARCH_SLOTS = 6;
+
+private static final int MIN_INTEL_MARCH_SLOTS = 1;
+
+private static final int SURVIVOR_BATCH_LIMIT = 2;
+
+private static final long SURVIVOR_BATCH_PAUSE_MILLIS = 60_000L;
+
 private static final PointData MARCH_RECALL_CONFIRM_TOP_LEFT = new PointData(446, 780);
 
 private static final PointData MARCH_RECALL_CONFIRM_BOTTOM_RIGHT = new PointData(578, 800);
@@ -91,6 +99,12 @@ private boolean isAutoJoinTaskEnabled;
 
 private boolean processingTask;
 
+private int maxIntelMarches;
+
+private int intelMarchesRemaining;
+
+private int survivorMissionsSincePause;
+
 // Changed by pernerch | Date: 2026-07-02 | Why: ensure gather and autojoin can be resumed after Intel priority handling.
 private boolean shouldRequeueGatherAfterIntel;
 
@@ -126,6 +140,7 @@ public IntelligenceRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 		beastMarchSent = false;
 		shouldRequeueGatherAfterIntel = false;
 		shouldRequeueAutoJoinAfterIntel = false;
+		survivorMissionsSincePause = 0;
 
 		autoJoinTask = TaskManagementService.shared().lookupTaskState(profile.getId(),
 				TpDailyTaskEnum.ALLIANCE_AUTOJOIN.getId());
@@ -173,6 +188,8 @@ public IntelligenceRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 						+ " duplicate gather march(es) to free Intel capacity."));
 			}
 		}
+
+		initializeIntelMarchCountersFlow();
 
 		while (processingTask) {
 			boolean anyIntelProcessed = false;
@@ -351,12 +368,19 @@ private MarchesAvailable inspectMarchAvailability() {
 		if (useSmartProcessing) {
 			return resolveMarchesAvailable();
 		} else {
-			boolean available = marchHelper.checkMarchesAvailable();
+			boolean available = intelMarchesRemaining > 0;
 			return new MarchesAvailable(available, LocalDateTime.now());
 		}
 	}
 
 private boolean shouldProcessBeastsFlow() {
+
+		if (intelMarchesRemaining <= 0) {
+			logInfo(routineLogIntelligenceLine("Internal Intel march counter exhausted (0/" + maxIntelMarches
+					+ "). Skipping Beast/Fire Beast until marches return."));
+			marchQueueLimitReached = true;
+			return false;
+		}
 
 
 		if (useFlag && beastMarchSent) {
@@ -955,39 +979,79 @@ private void manageRescheduling(boolean anyIntelProcessed, boolean nonBeastIntel
 			MarchesAvailable marchesAvailable) {
 		sleepTask(500);
 
-		// Changed by pernerch | Date: 2026-07-02 | Why: implement continuous mission execution
-		// until no marches OR no missions remain, with intelligent rescheduling logic.
+		boolean missionsStillAvailable = hasAnyIntelMissionAvailableFlow();
+		boolean nonMarchBoundMissionAvailable = hasNonMarchBoundIntelMissionAvailableFlow();
+		boolean onlyMarchBoundMissionsLeft = missionsStillAvailable && !nonMarchBoundMissionAvailable;
 
-		if (!anyIntelProcessed) {
-			logInfo(routineLogIntelligenceLine("No Intel missions processed this cycle."));
+		if (onlyMarchBoundMissionsLeft && marchQueueLimitReached) {
+			LocalDateTime waitUntil = resolveMarchReturnWaitTimeFlow(marchesAvailable);
+			reschedule(waitUntil);
+			logInfo(routineLogIntelligenceLine("Only march-bound intel missions remain and all Intel marches are occupied. "
+					+ "Waiting for march return and rescheduling Intel at: " + waitUntil.format(DATETIME_FORMATTER)));
+			processingTask = false;
+			return;
+		}
+
+		if (!missionsStillAvailable) {
+			logInfo(routineLogIntelligenceLine("No intel missions found after re-scan. Intel run is complete for now."));
 			tryRescheduleFromCooldownFlow();
 			processingTask = false;
 			return;
 		}
 
-		// Core logic: if march queue limit reached (no marches available)
-		if (marchQueueLimitReached) {
-			logInfo(routineLogIntelligenceLine("No marches available. Checking if missions remain..."));
-			
-			// Check if any missions still exist on the Intel screen
-			if (hasAnyIntelMissionAvailableFlow()) {
-				// Missions exist but no marches available: reschedule in 5 minutes
-				reschedule(LocalDateTime.now().plusMinutes(5));
-				logInfo(routineLogIntelligenceLine("Missions still available but all marches occupied. Rescheduling Intel in 5 minutes to wait for march availability."));
-				processingTask = false;
-				return;
-			} else {
-				// No marches AND no missions: Intel processing is complete
-				logInfo(routineLogIntelligenceLine("No marches available and no missions remain. Intel processing complete."));
-				tryRescheduleFromCooldownFlow();
-				processingTask = false;
-				return;
+		if (!anyIntelProcessed) {
+			logInfo(routineLogIntelligenceLine("Missions still exist but none were processed this cycle. Retrying immediately."));
+		}
+
+		if (missionsStillAvailable && marchQueueLimitReached && nonMarchBoundMissionAvailable) {
+			logInfo(routineLogIntelligenceLine("Intel march-bound missions are blocked, but Survivor/Journey missions remain. Continuing without march consumption."));
+		}
+
+		logInfo(routineLogIntelligenceLine("Missions are available. Continuing Intel mission processing."));
+	}
+
+	private LocalDateTime resolveMarchReturnWaitTimeFlow(MarchesAvailable marchesAvailable) {
+		if (marchesAvailable != null && marchesAvailable.rescheduleTo() != null
+				&& marchesAvailable.rescheduleTo().isAfter(LocalDateTime.now())) {
+			return marchesAvailable.rescheduleTo();
+		}
+
+		// Fallback when no reliable return timestamp is available from OCR/menu state.
+		return LocalDateTime.now().plusMinutes(5);
+	}
+
+	private void initializeIntelMarchCountersFlow() {
+		Integer configuredMarches = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, Integer.class);
+		int resolved = configuredMarches != null ? configuredMarches : MAX_INTEL_MARCH_SLOTS;
+		resolved = Math.max(MIN_INTEL_MARCH_SLOTS, Math.min(MAX_INTEL_MARCH_SLOTS, resolved));
+
+		maxIntelMarches = resolved;
+		intelMarchesRemaining = resolved;
+
+		logInfo(routineLogIntelligenceLine("Initialized internal Intel march counter: " + intelMarchesRemaining
+				+ "/" + maxIntelMarches + " (Beast/Fire Beast only)."));
+	}
+
+	private boolean hasNonMarchBoundIntelMissionAvailableFlow() {
+		intelScreenHelper.ensureOnIntelScreen();
+
+		if (survivorCampsEnabled) {
+			TemplatesEnum survivorTemplate = fcEra ? TemplatesEnum.INTEL_SURVIVOR_GRAYSCALE_FC
+					: TemplatesEnum.INTEL_SURVIVOR_GRAYSCALE;
+			if (templateSearchHelper.locatePatternMono(survivorTemplate, SearchConfigConstants.DEFAULT_SINGLE).isFound()) {
+				return true;
 			}
 		}
 
-		// Marches are still available: continue processing in next iteration
-		// The while(processingTask) loop will run again without stopping
-		logInfo(routineLogIntelligenceLine("Marches available. Continuing Intel mission processing."));
+		if (explorationsEnabled) {
+			TemplatesEnum journeyTemplate = fcEra ? TemplatesEnum.INTEL_JOURNEY_GRAYSCALE_FC
+					: TemplatesEnum.INTEL_JOURNEY_GRAYSCALE;
+			if (templateSearchHelper.locatePatternMono(journeyTemplate, SearchConfigConstants.DEFAULT_SINGLE).isFound()) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private boolean handleBeastIntel() {
@@ -1037,6 +1101,13 @@ private void manageRescheduling(boolean anyIntelProcessed, boolean nonBeastIntel
 	}
 
 private void handleSurvivor(ImageSearchResultData result) {
+		if (survivorMissionsSincePause >= SURVIVOR_BATCH_LIMIT) {
+			logInfo(routineLogIntelligenceLine("Survivor batch limit reached (" + SURVIVOR_BATCH_LIMIT
+					+ "). Waiting 1 minute before launching more survivor missions."));
+			sleepTask(SURVIVOR_BATCH_PAUSE_MILLIS);
+			survivorMissionsSincePause = 0;
+		}
+
 		tapPoint(result.getPoint());
 		sleepTask(2000);
 
@@ -1061,6 +1132,7 @@ private void handleSurvivor(ImageSearchResultData result) {
 
 		tapPoint(rescue.getPoint());
 		sleepTask(500);
+		survivorMissionsSincePause++;
 		StaminaService.getServices().subtractStamina(profile.getId(), SURVIVOR_STAMINA_COST_VALUE);
 		StatisticsService.obtain().addToCounter(profile, "Intel Survivor Camps", 1);
 	}
@@ -1194,6 +1266,12 @@ private void handleBeast(ImageSearchResultData beast) {
 
 		logInfo(routineLogIntelligenceLine("Beast march deployed finished cleanly."));
 		beastMarchSent = true;
+		intelMarchesRemaining = Math.max(0, intelMarchesRemaining - 1);
+		if (intelMarchesRemaining <= 0) {
+			marchQueueLimitReached = true;
+		}
+		logInfo(routineLogIntelligenceLine("Internal Intel march counter updated: " + intelMarchesRemaining
+				+ "/" + maxIntelMarches + " remaining after Beast/Fire Beast deployment."));
 		StatisticsService.obtain().addToCounter(profile, "Intel Beast", 1);
 
 
@@ -1211,10 +1289,9 @@ private void handleBeast(ImageSearchResultData beast) {
 
 		if (useSmartProcessing) {
 			LocalDateTime rescheduleTime = LocalDateTime.now().plusSeconds(travelTimeSeconds);
-			reschedule(rescheduleTime);
-			logInfo(routineLogIntelligenceLine("Beast march scheduled to return at " + GameTimeUtils.formatCountdown(rescheduleTime)));
-			processingTask = false;
-
+			logInfo(routineLogIntelligenceLine("Smart Intel beast march return ETA: "
+					+ GameTimeUtils.formatCountdown(rescheduleTime)
+					+ ". Continuing loop to use remaining available marches."));
 		}
 	}
 }

@@ -154,7 +154,7 @@ public class NavigationHelper {
             if (target == LaunchPoint.HOME && atWorld) {
                 ImageSearchResultData w = searcher.locatePattern(TemplatesEnum.GAME_HOME_WORLD,
                         SearchConfigConstants.DEFAULT_SINGLE);
-                if (w.isFound()) {
+                if (w.isFound() && isStableScreenAnchorFlow(TemplatesEnum.GAME_HOME_WORLD)) {
                     emu.touchPoint(device, w.getPoint());
                     interruptibleWait(2000);
                     if (searcher.locatePattern(TemplatesEnum.GAME_HOME_FURNACE,
@@ -163,7 +163,7 @@ public class NavigationHelper {
             } else if (target == LaunchPoint.WORLD && atHome) {
                 ImageSearchResultData h = searcher.locatePattern(TemplatesEnum.GAME_HOME_FURNACE,
                         SearchConfigConstants.DEFAULT_SINGLE);
-                if (h.isFound()) {
+                if (h.isFound() && isStableScreenAnchorFlow(TemplatesEnum.GAME_HOME_FURNACE)) {
                     emu.touchPoint(device, h.getPoint());
                     interruptibleWait(2000);
                     if (searcher.locatePattern(TemplatesEnum.GAME_HOME_WORLD,
@@ -180,6 +180,12 @@ public class NavigationHelper {
             pass++;
         }
         throw new HomeNotFoundException("Home not found after " + budget + " attempts");
+    }
+
+    // Require one immediate re-check before tapping a home/world anchor to reduce transient mis-taps.
+    private boolean isStableScreenAnchorFlow(TemplatesEnum anchorTemplate) {
+        interruptibleWait(120);
+        return searcher.locatePattern(anchorTemplate, SearchConfigConstants.DEFAULT_SINGLE).isFound();
     }
 
     // ── logging shortcuts ────────────────────────────────────────────

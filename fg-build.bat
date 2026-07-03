@@ -15,9 +15,54 @@ echo.
 echo Building project (clean + install)...
 call mvn clean install package
 if errorlevel 1 (
-    echo [ERROR] Build failed!
+    echo [WARN] First build attempt failed. Applying quick cleanup for transient resource-copy issues...
+    if exist "fg-vision\target" rmdir /S /Q "fg-vision\target"
+    timeout /t 2 >nul
+
+    echo.
+    echo Retrying build once...
+    call mvn clean install package
+    if errorlevel 1 (
+        echo [ERROR] Build failed after retry!
+        pause
+        exit /b %errorlevel%
+    )
+)
+
+echo.
+echo Verifying packaged app JAR integrity...
+set "APP_JAR="
+for %%F in ("fg-app\target\frostguard-*.jar") do set "APP_JAR=%%~fF"
+
+if not defined APP_JAR (
+    echo [ERROR] App JAR not found in fg-app\target.
     pause
-    exit /b %errorlevel%
+    exit /b 1
+)
+
+where jar >nul 2>&1
+if errorlevel 1 (
+    echo [WARN] 'jar' tool not found in PATH. Skipping JAR content verification.
+) else (
+    jar tf "%APP_JAR%" | findstr /C:"dev/frostguard/app/panel/launcher/LauncherLayoutController.class" >nul
+    if errorlevel 1 (
+        echo [WARN] LauncherLayoutController.class missing in packaged JAR. Rebuilding fg-app once...
+        call mvn -pl fg-app -am clean package -DskipTests
+        if errorlevel 1 (
+            echo [ERROR] Fallback fg-app rebuild failed!
+            pause
+            exit /b %errorlevel%
+        )
+
+        set "APP_JAR="
+        for %%F in ("fg-app\target\frostguard-*.jar") do set "APP_JAR=%%~fF"
+        jar tf "%APP_JAR%" | findstr /C:"dev/frostguard/app/panel/launcher/LauncherLayoutController.class" >nul
+        if errorlevel 1 (
+            echo [ERROR] Packaged JAR is still incomplete after fallback rebuild.
+            pause
+            exit /b 1
+        )
+    )
 )
 
 echo.

@@ -1,5 +1,7 @@
 package dev.frostguard.tasks.dailies;
 
+import java.time.LocalDateTime;
+
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.api.domain.AccountDescriptor;
@@ -7,7 +9,6 @@ import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
-import java.time.LocalDateTime;
 
 public class ChiefOrderRoutine extends DelayedTask {
 

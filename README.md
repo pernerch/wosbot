@@ -366,73 +366,76 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
 
 <br/>
 
-## 🛠️ Fixes
+## 🔧 Recent Fixes & Improvements
 
 <div align="center">
-  <i>Recent stability and scheduling fixes to improve reliability in real multi-account setups.</i>
+  <i>Consolidated reliability, scheduling, UI, and packaging improvements for shared-emulator and multi-profile operation.</i>
 </div>
 
 <br/>
 
-- **Debugging UI template search visibility control (2026-07-02)**
-  Template search field and ListView are now hidden by default in the Image Recognition debugging panel and only become visible when "Template Search" action is selected, preventing UI clutter when using OCR mode.
-  **Positive effect:** cleaner UI, better UX when switching between debugging modes, reduces visual confusion.
+### Build & Distribution
 
-- **Distribution package includes all 361 template images (2026-07-02)**
-  The application build now includes all template PNG files (361 images from fg-vision) in the distribution ZIP under the `templates/` directory, making image pattern matching available in packaged deployments.
-  **Positive effect:** debugging features work out-of-the-box without manual file setup, faster troubleshooting and template testing.
+| Date | Area | Change | Impact |
+|:-----|:-----|:-------|:-------|
+| 2026-07-02 | Build | Improved fg-build.bat resilience and retry behavior for transient build failures | Fewer broken local builds, cleaner recovery flow |
+| 2026-07-02 | Packaging | Added templates directory to distribution bundle (361 fg-vision images) | Debug template search works in packaged builds without manual copy steps |
+| 2026-07-02 | Build Artifacts | Added packaged app JAR integrity check with fallback rebuild | Prevents shipping incomplete app JARs after successful Maven output |
 
-- **Gather queue hard-cap and duplicate prevention**
-  Ensures gather march usage stays within a safe limit and avoids duplicate resource deployments.
-  **Positive effect:** fewer blocked marches, less unnecessary recall/wait behavior, and more predictable gather throughput.
+### UI & Navigation
 
-- **Automatic gather overflow correction**
-  Each gather cycle now validates active gather marches against the configured queue size and recalls duplicate marches with the longest return time first when overflow is detected.
-  **Positive effect:** keeps gather state clean over time, prevents hidden queue drift, and guarantees march capacity for priority tasks.
+| Date | Area | Change | Impact |
+|:-----|:-----|:-------|:-------|
+| 2026-07-02 | Debugging UI | Template search controls are hidden unless "Template Search" mode is active | Cleaner OCR workflow and lower visual clutter |
+| 2026-07-02 | Debugging UI | Fixed template list visibility/selection behavior in debugging panel | Template list now behaves predictably when switching actions |
+| 2026-07-03 | Navigation | Added stability re-check before HOME/WORLD anchor taps | Reduces transient mis-taps during screen-state transitions |
 
-- **Explicit gather recall reason logging**
-  Every automatic gather recall now logs a deterministic reason (`disabled-type`, `duplicate-type`, or `overflow-fallback`) including queue and march type.
-  **Positive effect:** faster troubleshooting and clear proof why a specific gather march was recalled.
+### Scheduler & Task Logic
 
-- **Gather deferral uses real march return timing**
-  When higher-priority march tasks are pending, gather now checks active marches first and defers using actual return windows.
-  **Positive effect:** avoids noisy rechecks and reduces scheduler churn while preserving event responsiveness.
+| Date | Area | Change | Impact |
+|:-----|:-----|:-------|:-------|
+| 2026-07-02 | Gather | Enforced gather queue hard-cap with duplicate prevention | Fewer blocked marches and less wasteful gather churn |
+| 2026-07-02 | Gather | Automatic overflow correction recalls duplicate marches by longest return first | Self-healing gather state and better march capacity availability |
+| 2026-07-02 | Gather | Added deterministic recall reason logging (`disabled-type`, `duplicate-type`, `overflow-fallback`) | Faster root-cause analysis for recall actions |
+| 2026-07-02 | Gather | Deferral now uses real march return timing instead of noisy blind retries | Lower scheduler churn with preserved event responsiveness |
+| 2026-07-02 | Intel | Mission-first pre-check before gather recall | Avoids unnecessary gather disruption when no Intel action exists |
+| 2026-07-02 | Intel | Intel recall flow explicitly re-enters world context before march handling | More reliable march detection and recall behavior |
+| 2026-07-02 | Intel | Internal march accounting for Beast/Fire Beast only, survivor batch throttling, journey unlimited flow | Better mission throughput and clearer march usage boundaries |
+| 2026-07-02 | Scheduler | Idle-time handover can pass slot to overdue same-emulator sibling profile | Better device-slot utilization and reduced idle waste |
+| 2026-07-02 | Scheduler | Added explicit single-profile-per-emulator guard for handover path | No behavior change for single-profile setups |
 
-- **Intel mission-first decision flow**
-  Intel now checks whether missions are actually available before recalling gather marches.
-  **Positive effect:** prevents unnecessary gather disruption when no Intel action is possible.
+### Multi-Profile Runtime & Logging
 
-- **Intel recall returns to world context first**
-  After the mission availability check, Intel now switches back to the world screen before searching and recalling gather marches.
-  **Positive effect:** restores reliable march detection and prevents recall failures caused by staying on the Intel screen.
+| Date | Area | Change | Impact |
+|:-----|:-----|:-------|:-------|
+| 2026-07-02 | Profile Switching | Runtime now refreshes active profile context and stamina on emulator-local handover | Prevents stale profile identity and stale stamina carry-over |
+| 2026-07-02 | Bear Trap | Added preemption safety gates and trigger suppression | Fewer false interrupts and smoother queue continuity |
+| 2026-07-02 | Bear Trap | Shared-emulator rally-join handling now avoids cross-account contention | Safer concurrent operation on one emulator slot |
+| 2026-07-02 | Character Switch | Corrected template paths for character-switch detection | More reliable switch-button discovery and profile switching |
+| 2026-07-03 | Logging | Emulator tap logs now resolve active profile per device slot instead of first profile on that emulator | Correct profile names in multi-profile shared-emulator logs |
 
-- **Full profile context refresh on profile switch**
-  On emulator-local profile handover, the runtime now refreshes active profile context and stamina, and the launcher title is updated to the currently active profile.
-  **Positive effect:** prevents stale account identity in the window header and eliminates carry-over stamina values from the previously active profile.
+### Stamina & Stability
 
-- **Bear Trap preemption safety gates**
-  Bear Trap preemption now respects feature enablement and includes trigger suppression to prevent rapid repeated interrupts.
-  **Positive effect:** fewer false preemptions and smoother task continuity.
+| Date | Area | Change | Impact |
+|:-----|:-----|:-------|:-------|
+| 2026-07-02 | Stamina | Added timeout guards and reduced OCR attempts/delays in stamina update flow | Significantly lower risk of UI stalls during stamina reads |
+| 2026-07-02 | Stamina | Stamina writes and deltas are clamped to valid in-game bounds | More stable combat/intel scheduling decisions |
 
-- **Shared-emulator Bear Trap rally handling**
-  Rally-join behavior is skipped for shared-emulator profiles while non-rally Bear Trap actions still execute.
-  **Positive effect:** lower cross-account contention and safer parallel account operation.
+### Commit Coverage (Fork vs Upstream)
 
-- **Character-switch template path correction**
-  Fixed profile-switch template mappings to the correct asset location.
-  **Positive effect:** removes switch button detection failures and improves account-switch reliability.
+| Date | Commit | Subject | Primary Scope | Coverage |
+|:-----|:-------|:--------|:--------------|:---------|
+| 2026-07-01 | 9e363c3 | Changes Profile fixed, Life Essence issues fixed, Bear logic fixed, no waiting time if bear is not set active. Smarter gather logic to avoid recalling them | Profile switching, Bear Trap behavior, gather safety, intelligence flow, life essence routines | Covered in Scheduler and Multi-Profile Runtime groups |
+| 2026-07-01 | 4fff81a | Stamina fix added | Stamina service corrections and tests | Covered in Stamina and Stability group |
+| 2026-07-02 | 54208c7 | fix character switch | Character switch template mapping | Covered in Multi-Profile Runtime and Logging group |
+| 2026-07-02 | 37b683e | Several smaller fixes | Mixed fixes across scheduler, gather, stamina, intel, and docs | Covered across grouped sections above |
+| 2026-07-02 | 89f8f59 | Hotfix #1 | Scheduler delay handling and launcher updates | Covered in Scheduler and Task Logic group |
+| 2026-07-02 | 8a077e6 | Hotfix #2 infinite loop caused by new methodics for gathering and march deployment for Intel and/or bear trap | Infinite-loop prevention in gather and march deployment flow | Covered in Scheduler and Task Logic group |
+| 2026-07-02 | 3a01a02 | Hotfix #3 Multiple smaller fixes | Build script, debugging UI, stamina helper, packaging updates | Covered in Build and Distribution, UI and Navigation, and Stamina and Stability groups |
+| 2026-07-02 | 41d8fa9 | Hotfix #4 Gather routine adaptions and few smaller fixes | Gather routine adaptations, config, and build packaging touch-ups | Covered in Scheduler and Task Logic and Build and Distribution groups |
+| 2026-07-03 | 8e80aa8 | Hotfix #5 | Intelligence routine refinements | Covered in Scheduler and Task Logic group |
 
-- **Idle-time emulator slot handover (same emulator only)**
-  On idle breach, the scheduler can hand over to another profile on the same emulator if it has overdue work, with priority-aware selection.
-  **Positive effect:** reduces idle waste and improves execution timeliness for shared-emulator account groups.
-
-- **Single-profile-per-emulator guard**
-  The handover path is explicitly bypassed when no same-emulator sibling profile exists.
-  **Positive effect:** no behavior impact for users running one profile per emulator, including multiple independent emulator instances.
-
-- **Stamina value clamping**
-  Stamina writes and deltas are clamped to valid in-game bounds.
-  **Positive effect:** prevents over-reported stamina from destabilizing combat/intel scheduling decisions.
+All commits in the range `upstream/main..HEAD` are represented above.
 
 <br/>
 
@@ -488,65 +491,6 @@ Any contributions you make are **greatly appreciated**.
 
 <br/>
 
-## 🔧 Recent Fixes & Improvements (2026-07-02)
-
-<h3>Build & Development Tools</h3>
-
-| Issue | Fix | Impact |
-|:------|:----|:-------|
-| **Build Script Reliability** | Enhanced `fg-build.bat` with Maven cache cleanup before build | Eliminates Maven cache-related build failures, ensures clean builds every time |
-
-<h3>Build & UI Enhancements</h3>
-
-| Issue | Fix | Impact |
-|:------|:----|:-------|
-| **Missing Debug UI Templates** | Added templates directory to distribution ZIP (361 image files) | Template Search now fully functional in Debugging tab |
-| **Template ListView Not Visible** | Fixed FXML layout: `VBox.vgrow="ALWAYS"` + dynamic visibility toggle | Template list displays when "Template Search" action selected |
-| **Template List Not Selectable** | Added listener to show/hide templateListView & searchTextField based on actionComboBox value | Cleaner UI, less clutter when using OCR mode |
-
-<h3>Performance & Stability</h3>
-
-| Issue | Fix | Impact |
-|:------|:----|:-------|
-| **Stamina Update Hangs** | Reduced OCR from 5→3 attempts, reduced delays 200ms→100ms, added 3-second timeout guards | Stamina reads now ~800-1000ms (was 2500ms+), **50% faster** |
-| **Storehouse Stamina Claim Fails** | Refined flow: intelligent popup wait detection (5s timeout), replaced blind 2000ms sleep with polling | Stamina claim now reliable, properly handles tutorial overlays |
-
-<h3>Scheduler & Task Logic</h3>
-
-| Issue | Fix | Impact |
-|:------|:----|:-------|
-| **Endless Gather→Intel Loop** | Added 1-minute lookahead in `GatherQueuePolicy.isTaskPending()` | Intel no longer treated as pending when scheduled 18+ hours later |
-
-<h3>Logging & Debugging</h3>
-
-| Issue | Fix | Impact |
-|:------|:----|:-------|
-| **Inconsistent Profile Names in Logs** | Made `logInfo()` consistent with `logWarning()` and `logDebug()` - all now include profile name | Critical for multi-profile debugging on shared emulator (prevents profile-switch confusion) |
-| **Console Character Encoding (Mojibake)** | Replaced 25+ Unicode characters (em-dashes, Greek letters) with ASCII equivalents | Log output now clean, no more garbled characters in console |
-
-<h3>Code Quality</h3>
-
-- Added detailed inline comments for all changes with author/date attribution (pernerch/2026-07-02)
-- Updated `fg-app/src/main/assembly/zip.xml` to include templates/ directory in distribution
-
-<h3>Files Modified</h3>
-
-```
-✅ fg-engine/src/main/java/dev/frostguard/engine/helper/StaminaHelper.java
-✅ fg-engine/src/main/java/dev/frostguard/engine/schedule/DelayedTask.java
-✅ fg-engine/src/main/java/dev/frostguard/engine/schedule/GatherQueuePolicy.java
-✅ fg-tasks/src/main/java/dev/frostguard/tasks/economy/StorehouseChestRoutine.java
-✅ fg-app/src/main/resources/layout/DebuggingLayout.fxml
-✅ fg-app/src/main/java/dev/frostguard/app/panel/misc/DebuggingLayoutController.java
-✅ fg-app/src/main/assembly/zip.xml
-✅ 6 additional files: Character encoding fixes
-```
-
-<br/>
-
----
-
-<br/>
 
 <sub>If you find this project useful, please consider giving it a star!</sub>
 

@@ -3,23 +3,45 @@ package dev.frostguard.engine.schedule;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import dev.frostguard.vision.convert.GameTimeUtils;
-import dev.frostguard.api.configs.*;
-import dev.frostguard.engine.emulator.EmulatorController;
-import dev.frostguard.engine.emulator.QueuePositionListener;
-import dev.frostguard.engine.error.*;
-import dev.frostguard.api.domain.*;
-import dev.frostguard.engine.service.*;
-import dev.frostguard.engine.schedule.inject.InjectionRule;
-import dev.frostguard.engine.schedule.preempt.PreemptionRule;
-import dev.frostguard.engine.schedule.priority.TaskPriorityProvider;
-import dev.frostguard.engine.schedule.priority.DefaultTaskPriorityProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.IdleBehaviorEnum;
+import dev.frostguard.api.configs.TemplatesEnum;
+import dev.frostguard.api.configs.TpDailyTaskEnum;
+import dev.frostguard.api.configs.TpMessageSeverityEnum;
+import dev.frostguard.api.domain.AccountDescriptor;
+import dev.frostguard.api.domain.ImageSearchResultData;
+import dev.frostguard.api.domain.ProfileStatusData;
+import dev.frostguard.api.domain.TaskQueueStatusData;
+import dev.frostguard.api.domain.TaskStateData;
+import dev.frostguard.engine.emulator.EmulatorController;
+import dev.frostguard.engine.emulator.QueuePositionListener;
+import dev.frostguard.engine.error.ADBConnectionException;
+import dev.frostguard.engine.error.HomeNotFoundException;
+import dev.frostguard.engine.error.ProfileInReconnectStateException;
+import dev.frostguard.engine.error.StopExecutionException;
+import dev.frostguard.engine.schedule.inject.InjectionRule;
+import dev.frostguard.engine.schedule.preempt.PreemptionRule;
+import dev.frostguard.engine.schedule.priority.DefaultTaskPriorityProvider;
+import dev.frostguard.engine.schedule.priority.TaskPriorityProvider;
+import dev.frostguard.engine.service.AnalyticsService;
+import dev.frostguard.engine.service.ConfigService;
+import dev.frostguard.engine.service.LoggingService;
+import dev.frostguard.engine.service.ProfileService;
+import dev.frostguard.engine.service.ScheduleService;
+import dev.frostguard.engine.service.TaskManagementService;
+import dev.frostguard.vision.convert.GameTimeUtils;
 
 /**
  * Per-profile task execution engine.  Runs on a virtual thread and

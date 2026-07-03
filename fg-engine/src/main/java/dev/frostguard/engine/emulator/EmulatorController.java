@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.*;
 
@@ -39,6 +40,7 @@ public class EmulatorController {
     private final Set<Thread>        slots        = new HashSet<>();
     private final Map<String,Thread> dev2thread   = new HashMap<>();
     private final Map<Thread,String> thread2dev   = new HashMap<>();
+    private final Map<String,String> dev2profile  = new ConcurrentHashMap<>();
     private final Map<String,Long>   cooldowns    = new HashMap<>();
     private EmulatorInstance backend;
     private int maxSlots = 3;
@@ -282,9 +284,15 @@ public class EmulatorController {
             if (slots.contains(self)) {
                 String mapped = thread2dev.get(self);
                 if (devIdx.equals(mapped) && !devConflict(devIdx, self) && backend.isRunning(devIdx)) {
+                    dev2profile.put(devIdx, profile.getName());
                     LOG.info("{} reusing slot", profile.getName()); profile.setQueuePosition(0); return;
                 }
-                slots.remove(self); if (mapped != null) dev2thread.remove(mapped); thread2dev.remove(self);
+                slots.remove(self);
+                if (mapped != null) {
+                    dev2thread.remove(mapped);
+                    dev2profile.remove(mapped);
+                }
+                thread2dev.remove(self);
             }
             // try immediate claim
             if (slots.size() < maxSlots && !devConflict(devIdx, self) && !coolingDown(devIdx)) {
@@ -319,6 +327,7 @@ public class EmulatorController {
             String devIdx = thread2dev.get(self);
             if (slots.remove(self) && devIdx != null) {
                 dev2thread.remove(devIdx); thread2dev.remove(self);
+                dev2profile.remove(devIdx);
                 long cd = readCooldownMs();
                 if (cd > 0) cooldowns.put(devIdx, System.currentTimeMillis() + cd);
                 LOG.info("{} released dev {}, {}/{}", profile.getName(), devIdx, slots.size(), maxSlots);
@@ -329,12 +338,12 @@ public class EmulatorController {
 
     public void resetSlots() {
         lock.lock();
-        try { queue.clear(); slots.clear(); dev2thread.clear(); thread2dev.clear(); cooldowns.clear(); cond.signalAll(); }
+        try { queue.clear(); slots.clear(); dev2thread.clear(); thread2dev.clear(); dev2profile.clear(); cooldowns.clear(); cond.signalAll(); }
         finally { lock.unlock(); }
     }
 
     private void grant(Thread t, String d, AccountDescriptor p) {
-        slots.add(t); dev2thread.put(d, t); thread2dev.put(t, d); p.setQueuePosition(0); cond.signalAll();
+        slots.add(t); dev2thread.put(d, t); thread2dev.put(t, d); dev2profile.put(d, p.getName()); p.setQueuePosition(0); cond.signalAll();
         LOG.info("{} got slot dev {}, {}/{}", p.getName(), d, slots.size(), maxSlots);
     }
 
@@ -364,6 +373,10 @@ public class EmulatorController {
 
     private String label(String idx) {
         try {
+            String active = dev2profile.get(idx);
+            if (active != null && !active.isBlank()) {
+                return active;
+            }
             return ProfileService.obtain().fetchAllAccounts().stream()
                     .filter(p -> idx.equals(p.getEmulatorNumber()))
                     .map(AccountDescriptor::getName).findFirst().orElse("Unknown");

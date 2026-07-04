@@ -36,7 +36,8 @@ public class LauncherActionController implements BotStateListener, QueueStateLis
     }
 
     public void stopBot() {
-        scheduleService.haltEngine();
+        // Changed by pernerch | Date: 2026-07-04 | Why: route GUI stop through dedicated GUI stop-behavior policy.
+        scheduleService.haltEngineFromGui();
     }
 
     public void pauseAllQueues() {

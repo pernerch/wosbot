@@ -8,6 +8,7 @@ import dev.frostguard.api.configs.ConfigurationKeyEnum;
 import dev.frostguard.engine.emulator.EmulatorType;
 import dev.frostguard.api.configs.GameVersionEnum;
 import dev.frostguard.api.configs.IdleBehaviorEnum;
+import dev.frostguard.api.configs.StopBehaviorEnum;
 import dev.frostguard.app.panel.emulator.EmulatorAux;
 import dev.frostguard.engine.service.ConfigService;
 import dev.frostguard.engine.service.ScheduleService;
@@ -66,6 +67,14 @@ public class EmuConfigLayoutController {
 	@FXML
 	private ComboBox<IdleBehaviorEnum> comboboxInactivityPolicy;
 
+	// Changed by pernerch | Date: 2026-07-04 | Why: expose dedicated stop behavior for manual GUI stop.
+	@FXML
+	private ComboBox<StopBehaviorEnum> comboboxStopBehavior;
+
+	// Changed by pernerch | Date: 2026-07-04 | Why: expose dedicated stop behavior for Telegram stop command.
+	@FXML
+	private ComboBox<StopBehaviorEnum> comboboxStopBehaviorTelegram;
+
 	@FXML
 	private CheckBox checkboxAutoStart;
 
@@ -104,6 +113,7 @@ public class EmuConfigLayoutController {
 		restoreSettingsFromConfig(globalConfig);
 		attachPersistenceListeners();
 		configureGameAndIdleDropdowns(globalConfig);
+		configureStopBehaviorDropdowns(globalConfig);
 		configureAutoStartSection(globalConfig);
 		configureAnalyticsToggles(globalConfig);
 	}
@@ -306,6 +316,41 @@ public class EmuConfigLayoutController {
 				if (chosenBehavior.shouldSendToBackground()) {
 					warnAboutConcurrentInstances();
 				}
+			}
+		});
+	}
+
+	private void configureStopBehaviorDropdowns(Map<String, String> cfg) {
+		// Changed by pernerch | Date: 2026-07-04 | Why: persist independent stop policies for GUI and Telegram stop flows.
+		comboboxStopBehavior.setItems(FXCollections.observableArrayList(StopBehaviorEnum.values()));
+		StopBehaviorEnum savedStopBehavior = StopBehaviorEnum.parse(
+				cfg.getOrDefault(
+						ConfigurationKeyEnum.STOP_BEHAVIOR_STRING.name(),
+						ConfigurationKeyEnum.STOP_BEHAVIOR_STRING.getDefaultValue()));
+		comboboxStopBehavior.setValue(savedStopBehavior);
+
+		comboboxStopBehavior.setOnAction(evt -> {
+			StopBehaviorEnum selected = comboboxStopBehavior.getValue();
+			if (selected != null) {
+				ScheduleService.obtain().persistEmulatorPath(
+						ConfigurationKeyEnum.STOP_BEHAVIOR_STRING.name(),
+						selected.name());
+			}
+		});
+
+		comboboxStopBehaviorTelegram.setItems(FXCollections.observableArrayList(StopBehaviorEnum.values()));
+		StopBehaviorEnum savedTelegramStopBehavior = StopBehaviorEnum.parse(
+				cfg.getOrDefault(
+						ConfigurationKeyEnum.STOP_BEHAVIOR_TELEGRAM_STRING.name(),
+						ConfigurationKeyEnum.STOP_BEHAVIOR_TELEGRAM_STRING.getDefaultValue()));
+		comboboxStopBehaviorTelegram.setValue(savedTelegramStopBehavior);
+
+		comboboxStopBehaviorTelegram.setOnAction(evt -> {
+			StopBehaviorEnum selected = comboboxStopBehaviorTelegram.getValue();
+			if (selected != null) {
+				ScheduleService.obtain().persistEmulatorPath(
+						ConfigurationKeyEnum.STOP_BEHAVIOR_TELEGRAM_STRING.name(),
+						selected.name());
 			}
 		});
 	}

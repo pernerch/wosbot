@@ -179,7 +179,8 @@ public class TelegramBotService implements BotStateListener {
                 sendMessage(chatId, "⏹️ Bot is not currently running.");
             } else {
                 Thread.ofVirtual().start(() -> {
-                    ScheduleService.obtain().haltEngine();
+                    // Changed by pernerch | Date: 2026-07-04 | Why: use Telegram-specific stop policy instead of generic stop path.
+                    ScheduleService.obtain().haltEngineFromTelegram();
                     sendMessage(chatId, "⏹️ Bot stopped.");
                 });
             }

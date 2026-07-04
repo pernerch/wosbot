@@ -70,5 +70,20 @@ echo ==========================================
 echo BUILD SUCCESSFUL!
 echo ==========================================
 echo.
+
+set "OUTPUT_DIR=%CD%\fg-app\target"
+set "BUNDLE_ZIP="
+for %%F in ("fg-app\target\*desktop-bundle.zip") do set "BUNDLE_ZIP=%%~fF"
+
+if defined BUNDLE_ZIP (
+    echo Opening desktop bundle ZIP: %BUNDLE_ZIP%
+    start "" explorer /select,"%BUNDLE_ZIP%"
+) else if exist "%OUTPUT_DIR%" (
+    echo [WARN] Desktop bundle ZIP not found. Opening output directory: %OUTPUT_DIR%
+    start "" explorer "%OUTPUT_DIR%"
+) else (
+    echo [WARN] Output directory not found: %OUTPUT_DIR%
+)
+
 pause
 

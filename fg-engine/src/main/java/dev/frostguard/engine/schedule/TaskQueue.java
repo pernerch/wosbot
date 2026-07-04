@@ -66,6 +66,8 @@ public class TaskQueue {
     private AccountDescriptor   profile;
     private volatile ExecutionContext   runningContext;
     private volatile LocalDateTime      sessionOrigin;
+    // Changed by pernerch | Date: 2026-07-04 | Why: ensure first startup cycle runs Initialize regardless of idle heuristics.
+    private volatile boolean    forceInitialInitialize = true;
     private volatile boolean    shuttingDown = false;
 
     public TaskQueue(AccountDescriptor profile) { this.profile = profile; }
@@ -173,6 +175,8 @@ public class TaskQueue {
 
     public void start() {
         if (statusModel.isRunning()) return;
+        // Changed by pernerch | Date: 2026-07-04 | Why: reset startup Initialize gate on each queue start.
+        forceInitialInitialize = true;
         statusModel.setRunning(true);
         executor = Thread.ofVirtual().unstarted(this::mainLoop);
         executor.setName("TaskQueue-" + profile.getName());
@@ -314,7 +318,7 @@ public class TaskQueue {
             emitInfo("Skipping task execution during shutdown: " + task.getTaskName());
             return false;
         }
-        if (task.getTpTask() == TpDailyTaskEnum.INITIALIZE && !isInitializeWorthRunning()) {
+        if (task.getTpTask() == TpDailyTaskEnum.INITIALIZE && !shouldRunInitialize()) {
             emitInfoTask(task, "Skipping Initialize - no imminent tasks"); return false;
         }
         LocalDateTime priorSchedule = task.getScheduled();
@@ -329,6 +333,10 @@ public class TaskQueue {
             AnalyticsService.getInstance().trackTaskStarted(task.getTaskName());
             task.setLastExecutionTime(LocalDateTime.now());
             task.run();
+            // Changed by pernerch | Date: 2026-07-04 | Why: clear forced-Initialize mode once Initialize completed successfully.
+            if (task.getTpTask() == TpDailyTaskEnum.INITIALIZE) {
+                forceInitialInitialize = false;
+            }
             long elapsed = (System.currentTimeMillis() - t0) / 1000;
             emitInfoTask(task, "Completed: " + task.getTaskName() + " scheduled=" + task.getScheduled().format(TS_FMT));
             AnalyticsService.getInstance().trackTaskCompleted(task.getTaskName(), "success", elapsed);
@@ -365,6 +373,11 @@ public class TaskQueue {
                 .map(c -> c.get(ConfigurationKeyEnum.MAX_IDLE_TIME_INT.name())).map(Integer::parseInt)
                 .orElse(Integer.parseInt(ConfigurationKeyEnum.MAX_IDLE_TIME_INT.getDefaultValue()));
         return hasRunnableTasksWithin(maxIdle);
+    }
+
+    private boolean shouldRunInitialize() {
+        // Changed by pernerch | Date: 2026-07-04 | Why: keep first Initialize mandatory, then fall back to previous worth-check behavior.
+        return forceInitialInitialize || isInitializeWorthRunning();
     }
 
     private TaskStateData recordPreExecution(DelayedTask task) {

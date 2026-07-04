@@ -268,11 +268,12 @@ fg-build.bat
 
 **What it does:**
 - ✅ Stops any running Java and ADB processes
-- ✅ Cleans Maven cache (prevents build artifacts issues)
-- ✅ Compiles all modules and creates distribution package
+- ✅ Runs full build (`mvn clean install package`) with one automatic retry for transient `fg-vision` copy/package issues
+- ✅ Verifies packaged app JAR integrity (`LauncherLayoutController.class` check) and triggers one focused `fg-app` fallback rebuild if needed
+- ✅ Opens the generated desktop-bundle ZIP in Explorer after success (fallback: opens `fg-app/target`)
 - ✅ Displays clear success/error messages
 
-This script is especially useful after code changes or if you encounter Maven cache-related build errors.
+This script is especially useful after code changes or when local packaging occasionally fails due to transient file-lock/resource-copy issues.
 
 <br/>
 
@@ -381,6 +382,9 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
 | 2026-07-02 | Build | Improved fg-build.bat resilience and retry behavior for transient build failures | Fewer broken local builds, cleaner recovery flow |
 | 2026-07-02 | Packaging | Added templates directory to distribution bundle (361 fg-vision images) | Debug template search works in packaged builds without manual copy steps |
 | 2026-07-02 | Build Artifacts | Added packaged app JAR integrity check with fallback rebuild | Prevents shipping incomplete app JARs after successful Maven output |
+| 2026-07-04 | Build Script | `fg-build.bat` now retries full build once after `fg-vision` transient copy/package failures | Better local build stability on occasional file-lock/resource-copy hiccups |
+| 2026-07-04 | Build Validation | `fg-build.bat` verifies packaged app JAR content and auto-runs focused `fg-app` fallback rebuild if integrity check fails | Reduces risk of distributing incomplete application JARs |
+| 2026-07-04 | Build Artifacts | `fg-build.bat` now opens the generated desktop-bundle ZIP in Explorer after successful builds (fallback: target folder) | Faster handoff to packaged output without manual folder navigation |
 
 ### UI & Navigation
 
@@ -389,6 +393,8 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
 | 2026-07-02 | Debugging UI | Template search controls are hidden unless "Template Search" mode is active | Cleaner OCR workflow and lower visual clutter |
 | 2026-07-02 | Debugging UI | Fixed template list visibility/selection behavior in debugging panel | Template list now behaves predictably when switching actions |
 | 2026-07-03 | Navigation | Added stability re-check before HOME/WORLD anchor taps | Reduces transient mis-taps during screen-state transitions |
+| 2026-07-04 | Emulator UI | Reworked Instance/Game settings into full-width layout with line-aligned rows | Cleaner settings readability and consistent control alignment |
+| 2026-07-04 | Emulator UI | Added `Stop Behavior` and `Stop Behavior Telegram` dropdowns in Instance Settings | Operators can control stop behavior separately for GUI and Telegram stop actions |
 
 ### Scheduler & Task Logic
 
@@ -403,6 +409,9 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
 | 2026-07-02 | Intel | Internal march accounting for Beast/Fire Beast only, survivor batch throttling, journey unlimited flow | Better mission throughput and clearer march usage boundaries |
 | 2026-07-02 | Scheduler | Idle-time handover can pass slot to overdue same-emulator sibling profile | Better device-slot utilization and reduced idle waste |
 | 2026-07-02 | Scheduler | Added explicit single-profile-per-emulator guard for handover path | No behavior change for single-profile setups |
+| 2026-07-04 | Scheduler | Bot start now guarantees first Initialize execution before normal queue heuristics apply | Prevents skipped startup initialization when emulator/game is already open |
+| 2026-07-04 | Intel | Added dynamic march-capacity fallback (`configured-1`) for possible VIP expiry during recall edge-case | Intel flow continues safely instead of retry-looping on false full-capacity assumptions |
+| 2026-07-04 | Injection | Furnace upgrade injection now performs recovery back navigation when claim button is missing | Reduces risk of leaving unexpected overlays (e.g., chat) open after aborted injection |
 
 ### Multi-Profile Runtime & Logging
 
@@ -413,6 +422,7 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
 | 2026-07-02 | Bear Trap | Shared-emulator rally-join handling now avoids cross-account contention | Safer concurrent operation on one emulator slot |
 | 2026-07-02 | Character Switch | Corrected template paths for character-switch detection | More reliable switch-button discovery and profile switching |
 | 2026-07-03 | Logging | Emulator tap logs now resolve active profile per device slot instead of first profile on that emulator | Correct profile names in multi-profile shared-emulator logs |
+| 2026-07-04 | Stop Control | Introduced separate GUI/Telegram stop paths with optional emulator-close behavior | Consistent operator control and safer remote stop handling |
 
 ### Stamina & Stability
 

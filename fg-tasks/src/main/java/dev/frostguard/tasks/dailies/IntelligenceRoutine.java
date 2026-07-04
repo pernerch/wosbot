@@ -103,6 +103,9 @@ private int maxIntelMarches;
 
 private int intelMarchesRemaining;
 
+// Changed by pernerch | Date: 2026-07-04 | Why: keep runtime Intel capacity override when march capacity drops (e.g., VIP expiry).
+private Integer intelMarchCapacityOverride;
+
 private int survivorMissionsSincePause;
 
 // Changed by pernerch | Date: 2026-07-02 | Why: ensure gather and autojoin can be resumed after Intel priority handling.
@@ -138,6 +141,8 @@ public IntelligenceRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 
 		processingTask = true;
 		beastMarchSent = false;
+		// Changed by pernerch | Date: 2026-07-04 | Why: reset per-run Intel march-capacity override before processing cycle starts.
+		intelMarchCapacityOverride = null;
 		shouldRequeueGatherAfterIntel = false;
 		shouldRequeueAutoJoinAfterIntel = false;
 		survivorMissionsSincePause = 0;
@@ -593,15 +598,29 @@ private void recallGatherTroopsFlow() {
 					foundReturning, foundView, foundSpeedup, attempt)));
 
 			if (!foundReturning && !foundView && !foundSpeedup) {
+				// Changed by pernerch | Date: 2026-07-04 | Why: replace hard-coded march ceiling with configured/adjusted runtime capacity.
+				int configuredMarches = resolveConfiguredIntelMarchesFlow();
 				int idleMarches = countIdleMarchesFlow();
-				if (idleMarches >= 6) {
-					logInfo(routineLogIntelligenceLine("Zero march indicators detected and all marches are idle. Recall is complete."));
+				if (idleMarches >= configuredMarches) {
+					logInfo(routineLogIntelligenceLine("Zero march indicators detected and all marches are idle ("
+							+ idleMarches + "/" + configuredMarches + "). Recall is complete."));
+					return;
+				}
+
+				int vipAdjustedMarches = Math.max(MIN_INTEL_MARCH_SLOTS, configuredMarches - 1);
+				// Changed by pernerch | Date: 2026-07-04 | Why: treat configured-1 idle marches with zero indicators as possible VIP slot expiry.
+				if (configuredMarches > MIN_INTEL_MARCH_SLOTS && idleMarches == vipAdjustedMarches) {
+					applyIntelMarchCapacityOverrideFlow(vipAdjustedMarches,
+							"No recall/view/speedup indicators and only " + idleMarches + "/" + configuredMarches
+									+ " marches idle, possibly VIP expired.");
+					logInfo(routineLogIntelligenceLine("Recall treated as complete with adjusted Intel march capacity "
+							+ vipAdjustedMarches + "/" + configuredMarches + "."));
 					return;
 				}
 
 				logWarning(routineLogIntelligenceLine(
 						"Zero recall/view/speedup indicators detected, but only " + idleMarches +
-						"/6 marches are idle. Retrying recall to avoid false success."));
+						"/" + configuredMarches + " marches are idle. Retrying recall to avoid false success."));
 				sleepTask(600);
 				continue;
 			}
@@ -1021,15 +1040,43 @@ private void manageRescheduling(boolean anyIntelProcessed, boolean nonBeastIntel
 	}
 
 	private void initializeIntelMarchCountersFlow() {
-		Integer configuredMarches = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, Integer.class);
-		int resolved = configuredMarches != null ? configuredMarches : MAX_INTEL_MARCH_SLOTS;
-		resolved = Math.max(MIN_INTEL_MARCH_SLOTS, Math.min(MAX_INTEL_MARCH_SLOTS, resolved));
+		int resolved = resolveConfiguredIntelMarchesFlow();
 
 		maxIntelMarches = resolved;
 		intelMarchesRemaining = resolved;
 
 		logInfo(routineLogIntelligenceLine("Initialized internal Intel march counter: " + intelMarchesRemaining
 				+ "/" + maxIntelMarches + " (Beast/Fire Beast only)."));
+	}
+
+	private int resolveConfiguredIntelMarchesFlow() {
+		// Changed by pernerch | Date: 2026-07-04 | Why: keep one source of truth for configured march capacity plus runtime override.
+		Integer configuredMarches = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, Integer.class);
+		int resolved = configuredMarches != null ? configuredMarches : MAX_INTEL_MARCH_SLOTS;
+		resolved = Math.max(MIN_INTEL_MARCH_SLOTS, Math.min(MAX_INTEL_MARCH_SLOTS, resolved));
+		if (intelMarchCapacityOverride != null) {
+			resolved = Math.min(resolved, intelMarchCapacityOverride);
+		}
+		return resolved;
+	}
+
+	private void applyIntelMarchCapacityOverrideFlow(int adjustedCapacity, String reason) {
+		// Changed by pernerch | Date: 2026-07-04 | Why: clamp and apply temporary capacity downgrade when VIP-expiry conditions are detected.
+		int normalized = Math.max(MIN_INTEL_MARCH_SLOTS, Math.min(MAX_INTEL_MARCH_SLOTS, adjustedCapacity));
+		if (intelMarchCapacityOverride != null && intelMarchCapacityOverride == normalized) {
+			return;
+		}
+
+		intelMarchCapacityOverride = normalized;
+		logWarning(routineLogIntelligenceLine("Adjusted internal Intel march capacity to " + normalized
+				+ " (possibly VIP expired). Reason: " + reason));
+
+		if (maxIntelMarches > 0) {
+			maxIntelMarches = normalized;
+			intelMarchesRemaining = Math.min(intelMarchesRemaining, normalized);
+			logInfo(routineLogIntelligenceLine("Internal Intel march counter updated after capacity adjustment: "
+					+ intelMarchesRemaining + "/" + maxIntelMarches + "."));
+		}
 	}
 
 	private boolean hasNonMarchBoundIntelMissionAvailableFlow() {

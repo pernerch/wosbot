@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.StopBehaviorEnum;
 import dev.frostguard.api.configs.TpConfigEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.api.configs.TpMessageSeverityEnum;
@@ -112,13 +114,61 @@ public class ScheduleService {
 	}
 
 	public void haltEngine() {
+		haltEngine(StopBehaviorEnum.DO_NOTHING);
+	}
+
+	// Changed by pernerch | Date: 2026-07-04 | Why: apply GUI-specific stop behavior configured in Instance Settings.
+	public void haltEngineFromGui() {
+		haltEngine(resolveStopBehavior(ConfigurationKeyEnum.STOP_BEHAVIOR_STRING));
+	}
+
+	// Changed by pernerch | Date: 2026-07-04 | Why: apply Telegram-specific stop behavior configured in Instance Settings.
+	public void haltEngineFromTelegram() {
+		haltEngine(resolveStopBehavior(ConfigurationKeyEnum.STOP_BEHAVIOR_TELEGRAM_STRING));
+	}
+
+	public void haltEngine(StopBehaviorEnum stopBehavior) {
 		dispatcher.stopAll();
+		if (stopBehavior == StopBehaviorEnum.CLOSE_EMULATOR) {
+			closeEnabledEmulators();
+		}
 		try {
 			AnalyticsService.getInstance().trackBotStopped("manual");
 		} catch (Exception ignored) {
 		}
 		notifyBotState(false, false);
 		notifyQueueState(null, false);
+	}
+
+	private StopBehaviorEnum resolveStopBehavior(ConfigurationKeyEnum key) {
+		// Changed by pernerch | Date: 2026-07-04 | Why: centralize config lookup and default fallback for stop policies.
+		if (key == null) {
+			return StopBehaviorEnum.DO_NOTHING;
+		}
+		String rawValue = Optional.ofNullable(ConfigService.obtain().loadGlobalSettings())
+				.map(cfg -> cfg.getOrDefault(key.name(), key.getDefaultValue()))
+				.orElse(key.getDefaultValue());
+		return StopBehaviorEnum.parse(rawValue);
+	}
+
+	private void closeEnabledEmulators() {
+		// Changed by pernerch | Date: 2026-07-04 | Why: close each enabled profile emulator once when stop policy requests emulator shutdown.
+		Set<String> emulatorsToClose = ProfileService.obtain().fetchAllAccounts().stream()
+				.filter(account -> Boolean.TRUE.equals(account.getEnabled()))
+				.map(AccountDescriptor::getEmulatorNumber)
+				.filter(emulator -> emulator != null && !emulator.isBlank())
+				.collect(Collectors.toCollection(LinkedHashSet::new));
+
+		for (String emulator : emulatorsToClose) {
+			try {
+				EmulatorController.getInstance().closeEmulator(emulator);
+				log(TpMessageSeverityEnum.INFO, "ScheduleService", "-",
+						"Stopped bot and closed emulator " + emulator);
+			} catch (Exception ex) {
+				log(TpMessageSeverityEnum.WARNING, "ScheduleService", "-",
+						"Failed to close emulator " + emulator + ": " + ex.getMessage());
+			}
+		}
 	}
 
 	public void suspendEngine() {

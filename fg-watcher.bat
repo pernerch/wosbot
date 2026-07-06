@@ -12,12 +12,26 @@ set "SEARCH_DIR=%~dp0"
 
 for /l %%i in (1,1,5) do (
     for %%f in ("!SEARCH_DIR!fg-watcher*.jar") do (
-        set "JAR=%%f"
-        goto :found
+        set "CAND=%%~nxf"
+        if /I not "!CAND:original-=!"=="!CAND!" (
+            rem skip original-* backup artifact
+        ) else if /I not "!CAND:-shaded=!"=="!CAND!" (
+            rem skip *-shaded duplicate artifact
+        ) else (
+            set "JAR=%%f"
+            goto :found
+        )
     )
     for %%f in ("!SEARCH_DIR!fg-watcher\target\fg-watcher*.jar") do (
-        set "JAR=%%f"
-        goto :found
+        set "CAND=%%~nxf"
+        if /I not "!CAND:original-=!"=="!CAND!" (
+            rem skip original-* backup artifact
+        ) else if /I not "!CAND:-shaded=!"=="!CAND!" (
+            rem skip *-shaded duplicate artifact
+        ) else (
+            set "JAR=%%f"
+            goto :found
+        )
     )
     for %%P in ("!SEARCH_DIR!..") do set "SEARCH_DIR=%%~fP\"
 )

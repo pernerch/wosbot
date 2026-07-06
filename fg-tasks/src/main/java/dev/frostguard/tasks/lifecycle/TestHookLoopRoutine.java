@@ -75,7 +75,7 @@ public class TestHookLoopRoutine extends DelayedTask {
         // â”€â”€ Pre-cache the template Mat once â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         Mat hookTemplate = OpenCvPatternLocator.getReferenceMatrix(TemplatesEnum.FISHING_HOOK.getTemplate());
         if (hookTemplate == null || hookTemplate.empty()) {
-            logWarning("Could not load hook template â€” aborting.");
+            logWarning("Could not load hook template - aborting.");
             reschedule(LocalDateTime.now().plusMinutes(5));
             return;
         }
@@ -102,11 +102,11 @@ public class TestHookLoopRoutine extends DelayedTask {
 
             // Warm up â€” wait for first decoded frame
             int warmupMs = "SCRCPY".equals(mode) ? 30000 : 20000;
-            logInfo(">>> " + mode + " STREAM MODE â€” warming up (max " + (warmupMs / 1000) + "s)... <<<");
+            logInfo(">>> " + mode + " STREAM MODE - warming up (max " + (warmupMs / 1000) + "s)... <<<");
             Mat warmup = candidate.waitForFrame(warmupMs);
             if (warmup != null) {
                 warmup.release();
-                logInfo("Stream warmed up â€” first frame received.");
+                logInfo("Stream warmed up - first frame received.");
                 stream = candidate;
                 streamMode = mode;
                 break;
@@ -114,14 +114,14 @@ public class TestHookLoopRoutine extends DelayedTask {
                 String err = candidate.getLastError();
                 logWarning("No frame from " + mode + " after " + (warmupMs / 1000) + "s" +
                         (err != null ? " (" + err + ")" : "") +
-                        " â€” trying next capture method.");
+                        " - trying next capture method.");
                 candidate.stop();
             }
         }
 
         // 4. Fall back to ADB screencap if no stream worked
         if (stream == null) {
-            logInfo(">>> ADB SCREENCAP MODE (fallback) â€” expecting 3-5 FPS <<<");
+            logInfo(">>> ADB SCREENCAP MODE (fallback) - expecting 3-5 FPS <<<");
             logInfo("To enable streaming: place ffmpeg.exe in lib/ffmpeg/ (screenrecord) " +
                     "or also add scrcpy-server in lib/scrcpy/ (scrcpy).");
         }
@@ -156,13 +156,13 @@ public class TestHookLoopRoutine extends DelayedTask {
         while (System.currentTimeMillis() - loopStart < MAX_DURATION_MS) {
 
             if (Thread.currentThread().isInterrupted()) {
-                logInfo("Thread interrupted â€” stopping loop.");
+                logInfo("Thread interrupted - stopping loop.");
                 break;
             }
 
             if (!stream.isRunning()) {
                 String err = stream.getLastError();
-                logWarning("Stream died" + (err != null ? ": " + err : "") + " â€” stopping loop.");
+                logWarning("Stream died" + (err != null ? ": " + err : "") + " - stopping loop.");
                 break;
             }
 
@@ -234,7 +234,7 @@ public class TestHookLoopRoutine extends DelayedTask {
         while (System.currentTimeMillis() - loopStart < MAX_DURATION_MS) {
 
             if (Thread.currentThread().isInterrupted()) {
-                logInfo("Thread interrupted â€” stopping loop.");
+                logInfo("Thread interrupted - stopping loop.");
                 break;
             }
 
@@ -282,7 +282,7 @@ public class TestHookLoopRoutine extends DelayedTask {
         long avgConvert = frameCount > 0 ? totalConvertMs / frameCount : 0;
         long avgMatch   = frameCount > 0 ? totalMatchMs / frameCount : 0;
 
-        logInfo("=== ADB SCREENCAP â€” Test Hook Loop completed ===");
+        logInfo("=== ADB SCREENCAP - Test Hook Loop completed ===");
         logInfo(String.format("Frames: %d | Elapsed: %dms | FPS: %.2f", frameCount, elapsed, fps));
         logInfo(String.format("Avg ADB: %dms | Avg convert: %dms | Avg match: %dms | Avg total: %dms",
                 avgCapture, avgConvert, avgMatch, avgCapture + avgConvert + avgMatch));
@@ -340,7 +340,7 @@ public class TestHookLoopRoutine extends DelayedTask {
     private VideoStreamCapture tryStartScreenRecord() {
         String ffmpegPath = ScrcpyStreamCapture.findFfmpeg();
         if (ffmpegPath == null) {
-            logInfo("ffmpeg not found â€” cannot use screenrecord streaming");
+            logInfo("ffmpeg not found - cannot use screenrecord streaming");
             return null;
         }
 
@@ -380,7 +380,7 @@ public class TestHookLoopRoutine extends DelayedTask {
                     .map(p -> p.getConfig(ConfigurationKeyEnum.TEST_HOOK_LOOP_ENABLED_BOOL, Boolean.class))
                     .orElse(false);
             if (enabled != null && !enabled) {
-                logInfo("Test Hook Loop disabled in configs â€” stopping.");
+                logInfo("Test Hook Loop disabled in configs - stopping.");
                 return false;
             }
         } catch (Exception e) { /* continue */ }

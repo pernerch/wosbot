@@ -52,41 +52,70 @@ public class StaminaHelper {
     }
 
     // Opens avatar screen, reads stamina via OCR, persists, then navigates back.
+    // Changed by pernerch | Date: 2026-07-02 | Why: add timeout guards to prevent stamina reads from blocking for 1+ seconds when OCR is slow or UI is unresponsive.
     public void updateStaminaFromProfile() {
         emitDebug("Opening profile to read stamina");
+        long startMs = System.currentTimeMillis();
+        long maxDurationMs = 3000; // 3 second timeout for entire operation
 
-        device.touchArea(deviceSlot,
-                CommonGameAreas.PROFILE_AVATAR.topLeft(),
-                CommonGameAreas.PROFILE_AVATAR.bottomRight(), 1, 500);
-        device.touchArea(deviceSlot,
-                CommonGameAreas.STAMINA_BUTTON.topLeft(),
-                CommonGameAreas.STAMINA_BUTTON.bottomRight(), 1, 500);
+        try {
+            // Touch profile avatar (timeout guard: skip if over 1 sec elapsed)
+            if (System.currentTimeMillis() - startMs < 1000) {
+                device.touchArea(deviceSlot,
+                        CommonGameAreas.PROFILE_AVATAR.topLeft(),
+                        CommonGameAreas.PROFILE_AVATAR.bottomRight(), 1, 200);
+            } else {
+                emitWarn("Stamina read timeout: profile open exceeded 1s, aborting");
+                return;
+            }
 
-        Integer reading = numberReader.attemptRecognition(
-                CommonGameAreas.STAMINA_OCR_AREA.topLeft(),
-                CommonGameAreas.STAMINA_OCR_AREA.bottomRight(),
-                5, 200L,
-                CommonOCRSettings.STAMINA_FRACTION_SETTINGS,
-                RegexNumberParser::hasFractionSyntax,
-                RegexNumberParser::numerator);
+            // Touch stamina button (timeout guard)
+            if (System.currentTimeMillis() - startMs < 1500) {
+                device.touchArea(deviceSlot,
+                        CommonGameAreas.STAMINA_BUTTON.topLeft(),
+                        CommonGameAreas.STAMINA_BUTTON.bottomRight(), 1, 200);
+            } else {
+                emitWarn("Stamina read timeout: stamina button click exceeded 1.5s, aborting");
+                device.pressBack(deviceSlot);
+                return;
+            }
 
-        if (reading == null) {
-            emitWarn("OCR could not parse stamina");
-        } else {
-            emitInfo("Stamina read: " + reading);
-            persistence.setStamina(accountKey, reading);
+            // Reduced OCR attempts (3 instead of 5) with shorter delay (100ms instead of 200ms)
+            // to avoid blocking for 1+ second when UI is sluggish.
+            Integer reading = numberReader.attemptRecognition(
+                    CommonGameAreas.STAMINA_OCR_AREA.topLeft(),
+                    CommonGameAreas.STAMINA_OCR_AREA.bottomRight(),
+                    3, 100L,
+                    CommonOCRSettings.STAMINA_FRACTION_SETTINGS,
+                    RegexNumberParser::hasFractionSyntax,
+                    RegexNumberParser::numerator);
+
+            if (reading == null) {
+                emitWarn("OCR could not parse stamina (elapsed " + (System.currentTimeMillis() - startMs) + "ms)");
+            } else {
+                emitInfo("Stamina read: " + reading);
+                persistence.setStamina(accountKey, reading);
+            }
+        } catch (Exception ex) {
+            emitWarn("Stamina update error: " + ex.getMessage());
+        } finally {
+            // Safety navigation back
+            try {
+                device.pressBack(deviceSlot);
+                device.pressBack(deviceSlot);
+            } catch (Exception ex) {
+                emitDebug("Press-back cleanup error: " + ex.getMessage());
+            }
         }
-
-        device.pressBack(deviceSlot);
-        device.pressBack(deviceSlot);
     }
 
     // Reads stamina cost from the deployment confirmation screen.
+    // Changed by pernerch | Date: 2026-07-02 | Why: reduce OCR attempts (3 instead of 5) to match deployment screen speed expectations.
     public Integer getSpentStamina() {
         Integer cost = numberReader.attemptRecognition(
                 CommonGameAreas.SPENT_STAMINA_OCR_AREA.topLeft(),
                 CommonGameAreas.SPENT_STAMINA_OCR_AREA.bottomRight(),
-                5, 200L,
+                3, 100L,
                 CommonOCRSettings.SPENT_STAMINA_SETTINGS,
                 txt -> RegexNumberParser.conformsTo(txt, CommonOCRSettings.NUMBER_PATTERN),
                 txt -> RegexNumberParser.extractByPattern(txt, CommonOCRSettings.NUMBER_PATTERN));
@@ -146,14 +175,14 @@ public class StaminaHelper {
             int regenMinutes = staminaRegenerationTime(level, refresh);
             LocalDateTime retry = LocalDateTime.now().plusMinutes(regenMinutes);
             cb.reschedule(retry);
-            emitWarn("Insufficient (" + level + "/" + min + ") — retry " +
+                emitWarn("Insufficient (" + level + "/" + min + ") - retry " +
                     GameTimeUtils.formatCountdown(retry));
             return false;
         }
 
         if (verifyMarches && !marchSupport.checkMarchesAvailable()) {
             cb.reschedule(LocalDateTime.now().plusMinutes(1));
-            emitWarn("No march slots — retry in 1 min");
+            emitWarn("No march slots - retry in 1 min");
             return false;
         }
 
@@ -161,11 +190,12 @@ public class StaminaHelper {
     }
 
     // Reads travel-time from the deployment screen; returns seconds or 0 on failure.
+    // Changed by pernerch | Date: 2026-07-02 | Why: reduce OCR delay to 100ms to prevent deployment screen hangs.
     public long parseTravelTime() {
         Duration parsed = durationReader.attemptRecognition(
                 CommonGameAreas.TRAVEL_TIME_OCR_AREA.topLeft(),
                 CommonGameAreas.TRAVEL_TIME_OCR_AREA.bottomRight(),
-                3, 200L,
+                3, 100L,
                 CommonOCRSettings.TRAVEL_TIME_SETTINGS,
                 GameTimeUtils::isAcceptedFormat,
                 GameTimeUtils::parseDuration);

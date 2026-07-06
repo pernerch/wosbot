@@ -3,23 +3,45 @@ package dev.frostguard.engine.schedule;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import dev.frostguard.vision.convert.GameTimeUtils;
-import dev.frostguard.api.configs.*;
-import dev.frostguard.engine.emulator.EmulatorController;
-import dev.frostguard.engine.emulator.QueuePositionListener;
-import dev.frostguard.engine.error.*;
-import dev.frostguard.api.domain.*;
-import dev.frostguard.engine.service.*;
-import dev.frostguard.engine.schedule.inject.InjectionRule;
-import dev.frostguard.engine.schedule.preempt.PreemptionRule;
-import dev.frostguard.engine.schedule.priority.TaskPriorityProvider;
-import dev.frostguard.engine.schedule.priority.DefaultTaskPriorityProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.IdleBehaviorEnum;
+import dev.frostguard.api.configs.TemplatesEnum;
+import dev.frostguard.api.configs.TpDailyTaskEnum;
+import dev.frostguard.api.configs.TpMessageSeverityEnum;
+import dev.frostguard.api.domain.AccountDescriptor;
+import dev.frostguard.api.domain.ImageSearchResultData;
+import dev.frostguard.api.domain.ProfileStatusData;
+import dev.frostguard.api.domain.TaskQueueStatusData;
+import dev.frostguard.api.domain.TaskStateData;
+import dev.frostguard.engine.emulator.EmulatorController;
+import dev.frostguard.engine.emulator.QueuePositionListener;
+import dev.frostguard.engine.error.ADBConnectionException;
+import dev.frostguard.engine.error.HomeNotFoundException;
+import dev.frostguard.engine.error.ProfileInReconnectStateException;
+import dev.frostguard.engine.error.StopExecutionException;
+import dev.frostguard.engine.schedule.inject.InjectionRule;
+import dev.frostguard.engine.schedule.preempt.PreemptionRule;
+import dev.frostguard.engine.schedule.priority.DefaultTaskPriorityProvider;
+import dev.frostguard.engine.schedule.priority.TaskPriorityProvider;
+import dev.frostguard.engine.service.AnalyticsService;
+import dev.frostguard.engine.service.ConfigService;
+import dev.frostguard.engine.service.LoggingService;
+import dev.frostguard.engine.service.ProfileService;
+import dev.frostguard.engine.service.ScheduleService;
+import dev.frostguard.engine.service.TaskManagementService;
+import dev.frostguard.vision.convert.GameTimeUtils;
 
 /**
  * Per-profile task execution engine.  Runs on a virtual thread and
@@ -44,6 +66,8 @@ public class TaskQueue {
     private AccountDescriptor   profile;
     private volatile ExecutionContext   runningContext;
     private volatile LocalDateTime      sessionOrigin;
+    // Changed by pernerch | Date: 2026-07-04 | Why: ensure first startup cycle runs Initialize regardless of idle heuristics.
+    private volatile boolean    forceInitialInitialize = true;
     private volatile boolean    shuttingDown = false;
 
     public TaskQueue(AccountDescriptor profile) { this.profile = profile; }
@@ -100,6 +124,24 @@ public class TaskQueue {
                 .anyMatch(t -> t.getDelay(TimeUnit.SECONDS) <= withinSec);
     }
 
+        // Changed by pernerch | Date: 2026-07-02 | Why: expose overdue runnable snapshot so
+        // peer queues on the same emulator can be prioritized before idle behavior closes/suspends.
+        public synchronized Optional<OverdueRunnableSnapshot> peekMostRelevantOverdueRunnableTask() {
+        LocalDateTime now = LocalDateTime.now();
+
+        return taskBacklog.stream()
+            .filter(t -> t.getDelay(TimeUnit.MILLISECONDS) <= 0)
+            .max(Comparator
+                .comparingInt((DelayedTask t) -> rankingStrategy.getPriority(t))
+                .thenComparingLong(t -> Duration.between(t.getScheduled(), now).getSeconds()))
+            .map(t -> new OverdueRunnableSnapshot(
+                t.getTaskName(),
+                t.getTpTask(),
+                rankingStrategy.getPriority(t),
+                Math.max(0, Duration.between(t.getScheduled(), now).getSeconds()),
+                t.getScheduled()));
+        }
+
     public boolean hasRunnableTasksWithin(int maxIdleMin) {
         if (taskBacklog.isEmpty()) return false;
         long capSec = TimeUnit.MINUTES.toSeconds(maxIdleMin);
@@ -112,14 +154,14 @@ public class TaskQueue {
 
     public synchronized void preemptActiveTask(PreemptionRule rule) {
         DelayedTask replacement = DelayedTaskRegistry.create(rule.getTaskToExecute(), profile);
-        if (replacement == null) { emitWarn("Preemption ignored — no mapping for " + rule.getTaskToExecute()); return; }
+        if (replacement == null) { emitWarn("Preemption ignored - no mapping for " + rule.getTaskToExecute()); return; }
 
         boolean shouldSignal = false;
         ExecutionContext ctx = runningContext;
         if (ctx != null) {
             int runningRank  = rankingStrategy.getPriority(ctx.getTask());
             int incomingRank = rankingStrategy.getPriority(replacement);
-            if (runningRank > incomingRank) { emitInfo("Preemption blocked — active task outranks"); }
+            if (runningRank > incomingRank) { emitInfo("Preemption blocked - active task outranks"); }
             else { emitWarn("Interrupting " + ctx.getTask().getTaskName() + " for: " + rule.getRuleName()); shouldSignal = true; }
         }
 
@@ -133,6 +175,8 @@ public class TaskQueue {
 
     public void start() {
         if (statusModel.isRunning()) return;
+        // Changed by pernerch | Date: 2026-07-04 | Why: reset startup Initialize gate on each queue start.
+        forceInitialInitialize = true;
         statusModel.setRunning(true);
         executor = Thread.ofVirtual().unstarted(this::mainLoop);
         executor.setName("TaskQueue-" + profile.getName());
@@ -209,7 +253,7 @@ public class TaskQueue {
 
             if (statusModel.isPaused())                { onPausedTick(); continue; }
             if (statusModel.isReadyToReconnect() && !deviceBridge.isRunning(profile.getEmulatorNumber())) {
-                emitInfo("Device offline — re-acquiring slot"); acquireSlot();
+                emitInfo("Device offline - re-acquiring slot"); acquireSlot();
             }
             if (enforceSessionCap()) continue;
 
@@ -274,8 +318,8 @@ public class TaskQueue {
             emitInfo("Skipping task execution during shutdown: " + task.getTaskName());
             return false;
         }
-        if (task.getTpTask() == TpDailyTaskEnum.INITIALIZE && !isInitializeWorthRunning()) {
-            emitInfoTask(task, "Skipping Initialize — no imminent tasks"); return false;
+        if (task.getTpTask() == TpDailyTaskEnum.INITIALIZE && !shouldRunInitialize()) {
+            emitInfoTask(task, "Skipping Initialize - no imminent tasks"); return false;
         }
         LocalDateTime priorSchedule = task.getScheduled();
         TaskStateData st = recordPreExecution(task);
@@ -289,6 +333,10 @@ public class TaskQueue {
             AnalyticsService.getInstance().trackTaskStarted(task.getTaskName());
             task.setLastExecutionTime(LocalDateTime.now());
             task.run();
+            // Changed by pernerch | Date: 2026-07-04 | Why: clear forced-Initialize mode once Initialize completed successfully.
+            if (task.getTpTask() == TpDailyTaskEnum.INITIALIZE) {
+                forceInitialInitialize = false;
+            }
             long elapsed = (System.currentTimeMillis() - t0) / 1000;
             emitInfoTask(task, "Completed: " + task.getTaskName() + " scheduled=" + task.getScheduled().format(TS_FMT));
             AnalyticsService.getInstance().trackTaskCompleted(task.getTaskName(), "success", elapsed);
@@ -325,6 +373,11 @@ public class TaskQueue {
                 .map(c -> c.get(ConfigurationKeyEnum.MAX_IDLE_TIME_INT.name())).map(Integer::parseInt)
                 .orElse(Integer.parseInt(ConfigurationKeyEnum.MAX_IDLE_TIME_INT.getDefaultValue()));
         return hasRunnableTasksWithin(maxIdle);
+    }
+
+    private boolean shouldRunInitialize() {
+        // Changed by pernerch | Date: 2026-07-04 | Why: keep first Initialize mandatory, then fall back to previous worth-check behavior.
+        return forceInitialInitialize || isInitializeWorthRunning();
     }
 
     private TaskStateData recordPreExecution(DelayedTask task) {
@@ -409,14 +462,103 @@ public class TaskQueue {
         if (runningContext != null) return;
         if (!statusModel.isIdleTimeExceeded() && statusModel.checkIdleTimeExceeded()) {
             boolean keep = Boolean.TRUE.equals(profile.getConfig(ConfigurationKeyEnum.KEEP_EMULATOR_OPEN_BOOL, Boolean.class));
-            if (keep) { emitInfo("Idle exceeded — keeping device open per config"); statusModel.setIdleTimeExceeded(true); return; }
+            if (keep) { emitInfo("Idle exceeded - keeping device open per config"); statusModel.setIdleTimeExceeded(true); return; }
+
+            // Changed by pernerch | Date: 2026-07-02 | Why: keep single-profile-per-emulator
+            // setups on the original idle path; only evaluate handover when siblings exist.
+            if (hasEnabledSiblingOnSameEmulator()) {
+                Optional<PeerSwitchCandidate> peerCandidate = findBestOverduePeerOnSameEmulator();
+                if (peerCandidate.isPresent()) {
+                    handoverSlotToPeer(peerCandidate.get());
+                    statusModel.setIdleTimeExceeded(true);
+                    return;
+                }
+            }
+
             suspendDevice(statusModel.getDelayUntil(), false);
+                    // Changed by pernerch | Date: 2026-07-02 | Why: force immediate activation of the
+                    // selected peer queue after slot handover to eliminate idle dead time.
             statusModel.setIdleTimeExceeded(true);
         } else if (statusModel.isIdleTimeExceeded() && LocalDateTime.now().plusMinutes(1).isAfter(statusModel.getDelayUntil())) {
-            emitInfo("Next task approaching — re-acquiring slot"); acquireSlot();
+            emitInfo("Next task approaching - re-acquiring slot"); acquireSlot();
             enqueue(DelayedTaskRegistry.create(TpDailyTaskEnum.INITIALIZE, profile));
             statusModel.setIdleTimeExceeded(false);
         }
+    }
+
+    private Optional<PeerSwitchCandidate> findBestOverduePeerOnSameEmulator() {
+        if (profile == null || profile.getEmulatorNumber() == null || profile.getEmulatorNumber().isBlank()) {
+            return Optional.empty();
+        }
+
+        TaskDispatcher coordinator = ScheduleService.obtain().getCoordinator();
+        if (coordinator == null) {
+            return Optional.empty();
+        }
+
+        return ProfileService.obtain().fetchAllAccounts().stream()
+                .filter(other -> other != null && other.getId() != null && !other.getId().equals(profile.getId()))
+                .filter(other -> Boolean.TRUE.equals(other.getEnabled()))
+                .filter(other -> profile.getEmulatorNumber().equals(other.getEmulatorNumber()))
+                .map(other -> {
+                    TaskQueue q = coordinator.getQueue(other.getId());
+                    if (q == null || !q.isActive()) {
+                        return null;
+                    }
+                    Optional<OverdueRunnableSnapshot> snapshot = q.peekMostRelevantOverdueRunnableTask();
+                    return snapshot.map(value -> new PeerSwitchCandidate(other, q, value)).orElse(null);
+                })
+                .filter(Objects::nonNull)
+                .max(Comparator
+                        .comparingInt((PeerSwitchCandidate c) -> c.overdue().taskPriority())
+                        .thenComparingLong(c -> c.account().getPriority())
+                        .thenComparingLong(c -> c.overdue().overdueSeconds()));
+    }
+
+    private boolean hasEnabledSiblingOnSameEmulator() {
+        // Changed by pernerch | Date: 2026-07-02 | Why: explicit sibling detection guard for
+        // no-impact behavior in single-profile-per-emulator environments.
+        if (profile == null || profile.getEmulatorNumber() == null || profile.getEmulatorNumber().isBlank()) {
+            return false;
+        }
+
+        return ProfileService.obtain().fetchAllAccounts().stream()
+                .filter(other -> other != null && other.getId() != null && !other.getId().equals(profile.getId()))
+                .filter(other -> Boolean.TRUE.equals(other.getEnabled()))
+                .anyMatch(other -> profile.getEmulatorNumber().equals(other.getEmulatorNumber()));
+    }
+
+    private void handoverSlotToPeer(PeerSwitchCandidate candidate) {
+        OverdueRunnableSnapshot overdue = candidate.overdue();
+        emitInfo(String.format(
+                "Idle exceeded - handing emulator slot to profile '%s' (task=%s, taskPriority=%d, profilePriority=%d, overdue=%ds)",
+                candidate.account().getName(),
+                overdue.taskType(),
+                overdue.taskPriority(),
+                candidate.account().getPriority(),
+                overdue.overdueSeconds()));
+
+        try {
+            deviceBridge.releaseEmulatorSlot(profile);
+            sessionOrigin = null;
+        } catch (Exception ex) {
+            emitWarn("Slot handover warning: " + ex.getMessage());
+        }
+
+        candidate.queue().runNow(TpDailyTaskEnum.INITIALIZE, false);
+        candidate.queue().resume();
+    }
+
+    private record PeerSwitchCandidate(AccountDescriptor account,
+                                       TaskQueue queue,
+                                       OverdueRunnableSnapshot overdue) {
+    }
+
+    public record OverdueRunnableSnapshot(String taskName,
+                                          TpDailyTaskEnum taskType,
+                                          int taskPriority,
+                                          long overdueSeconds,
+                                          LocalDateTime scheduledAt) {
     }
 
     private void suspendDevice(LocalDateTime until, boolean freeSlot) {
@@ -451,7 +593,7 @@ public class TaskQueue {
                 .map(c -> c.get(ConfigurationKeyEnum.PROFILE_MAX_ACTIVE_TIME_MINUTES_INT.name())).map(Integer::parseInt)
                 .orElse(Integer.parseInt(ConfigurationKeyEnum.PROFILE_MAX_ACTIVE_TIME_MINUTES_INT.getDefaultValue())));
         if (LocalDateTime.now().isBefore(sessionOrigin.plusMinutes(cap))) return false;
-        emitInfo("Max session time (" + cap + " min) reached — forcing idle");
+        emitInfo("Max session time (" + cap + " min) reached - forcing idle");
         suspendDevice(statusModel.getDelayUntil(), true);
         statusModel.setIdleTimeExceeded(true);
         return true;

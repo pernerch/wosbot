@@ -436,6 +436,24 @@ public class DebuggingLayoutController {
     private void setupActions() {
         actionComboBox.setItems(FXCollections.observableArrayList("Template Search", "OCR"));
         actionComboBox.getSelectionModel().selectFirst();
+        
+        // pernerch/2026-07-02: Dynamic visibility control for template search UI elements
+        // Template list and search field are only shown when "Template Search" action is selected
+        // This prevents UI clutter when using OCR mode
+        actionComboBox.valueProperty().addListener((observable, oldValue, newValue) -> {
+            boolean isTemplateSearch = "Template Search".equals(newValue);
+            searchTextField.setVisible(isTemplateSearch);
+            searchTextField.setManaged(isTemplateSearch);
+            templateListView.setVisible(isTemplateSearch);
+            templateListView.setManaged(isTemplateSearch);
+        });
+        
+        // Initialize visibility based on initial selection
+        boolean isTemplateSearch = "Template Search".equals(actionComboBox.getValue());
+        searchTextField.setVisible(isTemplateSearch);
+        searchTextField.setManaged(isTemplateSearch);
+        templateListView.setVisible(isTemplateSearch);
+        templateListView.setManaged(isTemplateSearch);
     }
 
     @FXML

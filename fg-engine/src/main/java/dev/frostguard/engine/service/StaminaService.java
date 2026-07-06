@@ -1,9 +1,5 @@
 package dev.frostguard.engine.service;
 
-import dev.frostguard.engine.listener.StaminaChangeListener;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -13,6 +9,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import dev.frostguard.engine.listener.StaminaChangeListener;
 
 /**
  * Tracks per-account energy levels and drives a background regeneration
@@ -30,6 +31,8 @@ public final class StaminaService {
     private static final Duration TICK_INTERVAL = Duration.ofMinutes(5);
     private static final Duration STALE_THRESHOLD = Duration.ofMinutes(30);
     private static final int REGEN_CEILING = 200;
+    // Changed by pernerch | Date: 2026-07-02 | Why: cap stored stamina to stop over-reported values from skewing scheduling.
+    private static final int MAX_STAMINA = 200;
 
     /** Compact snapshot of a single account's energy state. */
     private record EnergySlot(int level, Instant lastTouched) {
@@ -96,7 +99,9 @@ public final class StaminaService {
 
     public void setStamina(Long profileId, int stamina) {
         requireId(profileId);
-        EnergySlot fresh = new EnergySlot(Math.max(0, stamina), Instant.now());
+        // Changed by pernerch | Date: 2026-07-02 | Why: clamp OCR/config writes to valid in-game stamina bounds.
+        int clamped = clampStamina(stamina);
+        EnergySlot fresh = new EnergySlot(clamped, Instant.now());
         slots.put(profileId, fresh);
         broadcastChange(profileId, fresh.level());
     }
@@ -133,11 +138,16 @@ public final class StaminaService {
         AtomicInteger result = new AtomicInteger();
         slots.compute(profileId, (id, existing) -> {
             int base = (existing != null) ? existing.level() : 0;
-            int clamped = Math.max(0, base + delta);
+            int clamped = clampStamina(base + delta);
             result.set(clamped);
             return new EnergySlot(clamped, (existing != null) ? existing.lastTouched() : Instant.now());
         });
         return result.get();
+    }
+
+    private int clampStamina(int value) {
+        // Changed by pernerch | Date: 2026-07-02 | Why: keep one shared clamp path for consistent set/add/subtract behavior.
+        return Math.max(0, Math.min(MAX_STAMINA, value));
     }
 
     private void runRegenTick() {

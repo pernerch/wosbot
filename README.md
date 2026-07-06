@@ -258,6 +258,25 @@ mvn clean install package
 
 <br/>
 
+#### Quick Build Script (Windows)
+
+For Windows users, use the **`fg-build.bat`** script for easier compilation:
+
+```batch
+fg-build.bat
+```
+
+**What it does:**
+- ✅ Stops any running Java and ADB processes
+- ✅ Runs full build (`mvn clean install package`) with one automatic retry for transient `fg-vision` copy/package issues
+- ✅ Verifies packaged app JAR integrity (`LauncherLayoutController.class` check) and triggers one focused `fg-app` fallback rebuild if needed
+- ✅ Opens the generated desktop-bundle ZIP in Explorer after success (fallback: opens `fg-app/target`)
+- ✅ Displays clear success/error messages
+
+This script is especially useful after code changes or when local packaging occasionally fails due to transient file-lock/resource-copy issues.
+
+<br/>
+
 ### 3️⃣ Running the Bot
 
 ```sh
@@ -348,6 +367,88 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
 
 <br/>
 
+## 🔧 Recent Fixes & Improvements
+
+<div align="center">
+  <i>Consolidated reliability, scheduling, UI, and packaging improvements for shared-emulator and multi-profile operation.</i>
+</div>
+
+<br/>
+
+### Build & Distribution
+
+| Date | Area | Change | Impact |
+|:-----|:-----|:-------|:-------|
+| 2026-07-02 | Build | Improved fg-build.bat resilience and retry behavior for transient build failures | Fewer broken local builds, cleaner recovery flow |
+| 2026-07-02 | Packaging | Added templates directory to distribution bundle (361 fg-vision images) | Debug template search works in packaged builds without manual copy steps |
+| 2026-07-02 | Build Artifacts | Added packaged app JAR integrity check with fallback rebuild | Prevents shipping incomplete app JARs after successful Maven output |
+| 2026-07-04 | Build Script | `fg-build.bat` now retries full build once after `fg-vision` transient copy/package failures | Better local build stability on occasional file-lock/resource-copy hiccups |
+| 2026-07-04 | Build Validation | `fg-build.bat` verifies packaged app JAR content and auto-runs focused `fg-app` fallback rebuild if integrity check fails | Reduces risk of distributing incomplete application JARs |
+| 2026-07-04 | Build Artifacts | `fg-build.bat` now opens the generated desktop-bundle ZIP in Explorer after successful builds (fallback: target folder) | Faster handoff to packaged output without manual folder navigation |
+
+### UI & Navigation
+
+| Date | Area | Change | Impact |
+|:-----|:-----|:-------|:-------|
+| 2026-07-02 | Debugging UI | Template search controls are hidden unless "Template Search" mode is active | Cleaner OCR workflow and lower visual clutter |
+| 2026-07-02 | Debugging UI | Fixed template list visibility/selection behavior in debugging panel | Template list now behaves predictably when switching actions |
+| 2026-07-03 | Navigation | Added stability re-check before HOME/WORLD anchor taps | Reduces transient mis-taps during screen-state transitions |
+| 2026-07-04 | Emulator UI | Reworked Instance/Game settings into full-width layout with line-aligned rows | Cleaner settings readability and consistent control alignment |
+| 2026-07-04 | Emulator UI | Added `Stop Behavior` and `Stop Behavior Telegram` dropdowns in Instance Settings | Operators can control stop behavior separately for GUI and Telegram stop actions |
+
+### Scheduler & Task Logic
+
+| Date | Area | Change | Impact |
+|:-----|:-----|:-------|:-------|
+| 2026-07-02 | Gather | Enforced gather queue hard-cap with duplicate prevention | Fewer blocked marches and less wasteful gather churn |
+| 2026-07-02 | Gather | Automatic overflow correction recalls duplicate marches by longest return first | Self-healing gather state and better march capacity availability |
+| 2026-07-02 | Gather | Added deterministic recall reason logging (`disabled-type`, `duplicate-type`, `overflow-fallback`) | Faster root-cause analysis for recall actions |
+| 2026-07-02 | Gather | Deferral now uses real march return timing instead of noisy blind retries | Lower scheduler churn with preserved event responsiveness |
+| 2026-07-02 | Intel | Mission-first pre-check before gather recall | Avoids unnecessary gather disruption when no Intel action exists |
+| 2026-07-02 | Intel | Intel recall flow explicitly re-enters world context before march handling | More reliable march detection and recall behavior |
+| 2026-07-02 | Intel | Internal march accounting for Beast/Fire Beast only, survivor batch throttling, journey unlimited flow | Better mission throughput and clearer march usage boundaries |
+| 2026-07-02 | Scheduler | Idle-time handover can pass slot to overdue same-emulator sibling profile | Better device-slot utilization and reduced idle waste |
+| 2026-07-02 | Scheduler | Added explicit single-profile-per-emulator guard for handover path | No behavior change for single-profile setups |
+| 2026-07-04 | Scheduler | Bot start now guarantees first Initialize execution before normal queue heuristics apply | Prevents skipped startup initialization when emulator/game is already open |
+| 2026-07-04 | Intel | Added dynamic march-capacity fallback (`configured-1`) for possible VIP expiry during recall edge-case | Intel flow continues safely instead of retry-looping on false full-capacity assumptions |
+| 2026-07-04 | Injection | Furnace upgrade injection now performs recovery back navigation when claim button is missing | Reduces risk of leaving unexpected overlays (e.g., chat) open after aborted injection |
+
+### Multi-Profile Runtime & Logging
+
+| Date | Area | Change | Impact |
+|:-----|:-----|:-------|:-------|
+| 2026-07-02 | Profile Switching | Runtime now refreshes active profile context and stamina on emulator-local handover | Prevents stale profile identity and stale stamina carry-over |
+| 2026-07-02 | Bear Trap | Added preemption safety gates and trigger suppression | Fewer false interrupts and smoother queue continuity |
+| 2026-07-02 | Bear Trap | Shared-emulator rally-join handling now avoids cross-account contention | Safer concurrent operation on one emulator slot |
+| 2026-07-02 | Character Switch | Corrected template paths for character-switch detection | More reliable switch-button discovery and profile switching |
+| 2026-07-03 | Logging | Emulator tap logs now resolve active profile per device slot instead of first profile on that emulator | Correct profile names in multi-profile shared-emulator logs |
+| 2026-07-04 | Stop Control | Introduced separate GUI/Telegram stop paths with optional emulator-close behavior | Consistent operator control and safer remote stop handling |
+
+### Stamina & Stability
+
+| Date | Area | Change | Impact |
+|:-----|:-----|:-------|:-------|
+| 2026-07-02 | Stamina | Added timeout guards and reduced OCR attempts/delays in stamina update flow | Significantly lower risk of UI stalls during stamina reads |
+| 2026-07-02 | Stamina | Stamina writes and deltas are clamped to valid in-game bounds | More stable combat/intel scheduling decisions |
+
+### Commit Coverage (Fork vs Upstream)
+
+| Date | Commit | Subject | Primary Scope | Coverage |
+|:-----|:-------|:--------|:--------------|:---------|
+| 2026-07-01 | 9e363c3 | Changes Profile fixed, Life Essence issues fixed, Bear logic fixed, no waiting time if bear is not set active. Smarter gather logic to avoid recalling them | Profile switching, Bear Trap behavior, gather safety, intelligence flow, life essence routines | Covered in Scheduler and Multi-Profile Runtime groups |
+| 2026-07-01 | 4fff81a | Stamina fix added | Stamina service corrections and tests | Covered in Stamina and Stability group |
+| 2026-07-02 | 54208c7 | fix character switch | Character switch template mapping | Covered in Multi-Profile Runtime and Logging group |
+| 2026-07-02 | 37b683e | Several smaller fixes | Mixed fixes across scheduler, gather, stamina, intel, and docs | Covered across grouped sections above |
+| 2026-07-02 | 89f8f59 | Hotfix #1 | Scheduler delay handling and launcher updates | Covered in Scheduler and Task Logic group |
+| 2026-07-02 | 8a077e6 | Hotfix #2 infinite loop caused by new methodics for gathering and march deployment for Intel and/or bear trap | Infinite-loop prevention in gather and march deployment flow | Covered in Scheduler and Task Logic group |
+| 2026-07-02 | 3a01a02 | Hotfix #3 Multiple smaller fixes | Build script, debugging UI, stamina helper, packaging updates | Covered in Build and Distribution, UI and Navigation, and Stamina and Stability groups |
+| 2026-07-02 | 41d8fa9 | Hotfix #4 Gather routine adaptions and few smaller fixes | Gather routine adaptations, config, and build packaging touch-ups | Covered in Scheduler and Task Logic and Build and Distribution groups |
+| 2026-07-03 | 8e80aa8 | Hotfix #5 | Intelligence routine refinements | Covered in Scheduler and Task Logic group |
+
+All commits in the range `upstream/main..HEAD` are represented above.
+
+<br/>
+
 ## 🚀 Roadmap
 
 <div align="center">
@@ -400,9 +501,6 @@ Any contributions you make are **greatly appreciated**.
 
 <br/>
 
-<div align="center">
-
-### ⭐ Star History
 
 <sub>If you find this project useful, please consider giving it a star!</sub>
 

@@ -65,14 +65,30 @@
 				</executions>
 			</plugin>
 
-			<!-- Output JAR naming -->
+			<!-- Keep only canonical watcher jar in target -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-jar-plugin</artifactId>
-				<version>3.2.0</version>
-				<configuration>
-					<finalName>fg-watcher-${project.version}</finalName>
-				</configuration>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<version>3.1.0</version>
+				<executions>
+					<execution>
+						<id>cleanup-shade-backups</id>
+						<phase>package</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<target>
+								<delete quiet="true">
+									<fileset dir="${project.build.directory}">
+										<include name="original-*.jar"/>
+										<include name="*-shaded.jar"/>
+									</fileset>
+								</delete>
+							</target>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

@@ -145,13 +145,14 @@ public class LifeEssenceCaringRoutine extends DelayedTask {
 		tapPoint(lifeEssenceMenu.getPoint());
 		sleepTask(3000); // Wait for menu to fully load
 
+		/** not required anymore - claim detection works without closing overview, and this was causing some issues with the caring flow
 		// Back out twice to close the overview screen
 		logDebug("Closing overview screen (2x back button)");
 		pressBack();
 		sleepTask(500); // Short delay between backs
 		pressBack();
 		sleepTask(1000); // Wait for UI to settle
-
+		*/
 		logInfo("Successfully navigated to Life Essence area");
 		return true;
 	}

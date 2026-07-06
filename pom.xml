@@ -40,8 +40,8 @@
 		<module>fg-vision</module>
 		<module>fg-engine</module>
 		<module>fg-tasks</module>
-		<module>fg-app</module>
 		<module>fg-watcher</module>
+		<module>fg-app</module>
 	</modules>
 
 	<!-- ──────────────────────────────────────────────

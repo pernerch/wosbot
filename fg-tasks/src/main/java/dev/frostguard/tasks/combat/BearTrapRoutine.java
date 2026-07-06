@@ -15,6 +15,7 @@ import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.schedule.TaskQueue;
 import dev.frostguard.engine.service.BotOcrEngine;
 import dev.frostguard.engine.service.ConfigService;
+import dev.frostguard.engine.service.ProfileService;
 import dev.frostguard.vision.convert.GameTimeUtils;
 import dev.frostguard.vision.convert.RegexNumberParser;
 import dev.frostguard.vision.ocr.ResilientOcrExecutor;
@@ -145,6 +146,9 @@ private boolean joinRally;
 private boolean usePets;
 
 private boolean recallTroops;
+
+// Changed by pernerch | Date: 2026-07-02 | Why: detect shared-emulator profiles to avoid rally contention across accounts.
+private boolean sharedEmulator;
 
 private int trapNumber;
 
@@ -355,6 +359,14 @@ private String routineLogBearTrapLine(String note) {
     }
 
 private void recallGatherTroopsFlow() {
+        // pernerch/2026-07-02: record recall timestamp in profile config BEFORE recalling.
+        // GatherRoutine reads GATHER_LAST_RECALL_TIME_STRING on startup and uses it to wait
+        // for troops to return home before re-deploying (checkTroopReturnPending).
+        profile.setConfig(
+            dev.frostguard.api.configs.ConfigurationKeyEnum.GATHER_LAST_RECALL_TIME_STRING,
+            java.time.LocalDateTime.now().toString());
+        logInfo(routineLogBearTrapLine("Gather recall timestamp stored for troop-return tracking."));
+
         int attempt = 0;
 
         while (attempt < MAX_GATHER_RECALL_ATTEMPTS_LIMIT) {
@@ -540,12 +552,14 @@ private void hydrateConfiguration() {
 
         this.joinFlags = decodeJoinFlags();
         this.currentJoinFlagIndex = 0;
+        // Changed by pernerch | Date: 2026-07-02 | Why: resolve shared-emulator state at hydration for deterministic active-phase behavior.
+        this.sharedEmulator = isSharedEmulatorProfile();
 
 
         logDebug(routineLogBearTrapLine(String.format(
-                "Configuration loaded - Trap: %d, PrepTime: %dmin, OwnRally: %s (flag:%d), JoinRally: %s (flags:%s), Pets: %s, Recall: %s",
+                "Configuration loaded - Trap: %d, PrepTime: %dmin, OwnRally: %s (flag:%d), JoinRally: %s (flags:%s), Pets: %s, Recall: %s, SharedEmulator: %s",
                 trapNumber, trapPreparationTime, callOwnRally, ownRallyFlag, joinRally, joinFlags, usePets,
-                recallTroops)));
+                recallTroops, sharedEmulator)));
     }
 
 private int resolveNextJoinFlag() {
@@ -707,8 +721,11 @@ private int inspectFreeMarches() {
     }
 
 private void handleJoinRallies2() {
-        if (!joinRally) {
-            return;
+		// Changed by pernerch | Date: 2026-07-02 | Why: skip rally joining on shared emulators while keeping other Bear Trap actions active.
+        if (!joinRally || sharedEmulator) {
+            if (sharedEmulator) {
+                logInfo(routineLogBearTrapLine("Skipping rally joining because this profile shares an emulator with another account."));
+            }
         }
 
         try {
@@ -828,6 +845,16 @@ private TrapTimingShape computeTrapTiming() {
 private int resolveConfigInt(ConfigurationKeyEnum key, int defaultValue) {
         Integer value = profile.getConfig(key, Integer.class);
         return (value != null) ? value : defaultValue;
+    }
+
+private boolean isSharedEmulatorProfile() {
+        if (profile == null || profile.getEmulatorNumber() == null || profile.getEmulatorNumber().isBlank()) {
+            return false;
+        }
+        return ProfileService.obtain().fetchAllAccounts().stream()
+                .filter(other -> other != null && other.getId() != null && !other.getId().equals(profile.getId()))
+                .filter(other -> profile.getEmulatorNumber().equals(other.getEmulatorNumber()))
+                .anyMatch(other -> Boolean.TRUE.equals(other.getEnabled()));
     }
 
 private void recallMarchFlow() {

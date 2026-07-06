@@ -201,11 +201,19 @@ public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 
             List<ImageSearchResultData> foundResults = new ArrayList<>();
             for (TemplatesEnum template : researchTemplates) {
-                ImageSearchResultData templateResult = emuManager.locatePattern(
-                        EMULATOR_NUMBER, researchScreenshot, template, 90.0);
-                if (templateResult != null && templateResult.isFound()) {
-                    logInfo(routineLogResearchLine("Detected research template: " + template.name()));
-                    foundResults.add(templateResult);
+                // Single-hit search would return only the single best-correlated occurrence
+                // across the whole screen. An untouched tree renders several nodes with the
+                // identical "X/3" badge at once, so it must find ALL of them here for
+                // "topmost of foundResults" below to actually mean the topmost node on screen
+                // (the earliest still-incomplete one, which prerequisite-ordering guarantees is
+                // always the unlocked one) instead of an arbitrary same-looking match.
+                List<ImageSearchResultData> templateResults = emuManager.locateAllPatterns(
+                        EMULATOR_NUMBER, researchScreenshot, template,
+                        new PointData(0, 0), new PointData(720, 1280), 90.0, 10);
+                if (!templateResults.isEmpty()) {
+                    logInfo(routineLogResearchLine("Detected " + templateResults.size()
+                            + " node(s) with template: " + template.name()));
+                    foundResults.addAll(templateResults);
                 }
             }
 

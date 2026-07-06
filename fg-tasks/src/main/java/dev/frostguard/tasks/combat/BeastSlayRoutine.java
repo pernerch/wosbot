@@ -11,6 +11,7 @@ import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
+import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.service.StatisticsService;
 
 public class BeastSlayRoutine extends DelayedTask {
@@ -58,15 +59,21 @@ public class BeastSlayRoutine extends DelayedTask {
 		while (currentStamina >= MIN_STAMINA && attacksDone < maxQueues) {
 
 			sleepTask(6000);
-			// go to the beast search menu
+			// Open the creature search menu
 			tapRandomPoint(new PointData(25, 850), new PointData(67, 898));
-			sleepTask(1000);
+			sleepTask(1500);
 
-			swipe(new PointData(20, 910), new PointData(70, 915));
-			sleepTask(1000);
-			// beast button
-			tapRandomPoint(new PointData(70, 880), new PointData(120, 930));
-			sleepTask(1000);
+			// Select the "Beasts" tab by template, swiping the tab row until found.
+			// Mirrors PolarTerrorHuntingRoutine.openUpPolarsMenu so an inserted event
+			// tab (e.g. "Berserk Cryptid") can no longer shift the blind tap onto the
+			// wrong creature. If the tab can't be located, skip rather than mis-attack.
+			if (!selectBeastTab()) {
+				logWarning("Could not locate the Beasts tab (an event may have changed the search menu). "
+						+ "Skipping attack to avoid hitting the wrong creature. Retrying in 5 min.");
+				updateReschedule(LocalDateTime.now().plusMinutes(5));
+				break;
+			}
+
 			// go to level 1
 			swipe(new PointData(180, 1050), new PointData(1, 1050));
 
@@ -127,6 +134,33 @@ public class BeastSlayRoutine extends DelayedTask {
 	@Override
 	protected LaunchPoint getRequiredStartLocation() {
 		return LaunchPoint.WORLD;
+	}
+
+	/**
+	 * Selects the "Beasts" tab in the creature search menu by locating its icon
+	 * and swiping the tab row until it is found. Mirrors the robust approach of
+	 * {@link PolarTerrorHuntingRoutine#openUpPolarsMenu}, so an inserted event tab
+	 * (e.g. "Berserk Cryptid" during a Cryptid event) can no longer shift a blind
+	 * tap onto the wrong creature.
+	 *
+	 * @return {@code true} once the Beasts tab has been tapped; {@code false} if the
+	 *         icon could not be located after several swipes.
+	 */
+	private boolean selectBeastTab() {
+		ImageSearchResultData beastTab = templateSearchHelper.locatePattern(
+				TemplatesEnum.BEAST_SEARCH_ICON, SearchConfigConstants.SINGLE_WITH_RETRIES);
+		for (int i = 0; i < 4 && (beastTab == null || !beastTab.isFound()); i++) {
+			swipe(new PointData(40, 913), new PointData(678, 913));
+			sleepTask(500);
+			beastTab = templateSearchHelper.locatePattern(
+					TemplatesEnum.BEAST_SEARCH_ICON, SearchConfigConstants.SINGLE_WITH_RETRIES);
+		}
+		if (beastTab == null || !beastTab.isFound()) {
+			return false;
+		}
+		tapPoint(beastTab.getPoint());
+		sleepTask(1000);
+		return true;
 	}
 
 	// ========================================================================

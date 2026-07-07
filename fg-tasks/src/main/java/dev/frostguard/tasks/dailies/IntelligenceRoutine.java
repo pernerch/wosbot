@@ -30,6 +30,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -198,8 +200,8 @@ public IntelligenceRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 
 		while (processingTask) {
 			boolean anyIntelProcessed = false;
-			boolean nonBeastIntelProcessed = false;
 			beastMarchSent = false;
+			refreshIntelMarchBudgetIfPossibleFlow();
 
 
 			navigationHelper.ensureCorrectScreenLocation(LaunchPoint.WORLD);
@@ -207,6 +209,12 @@ public IntelligenceRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 
 			MarchesAvailable marchesAvailable = inspectMarchAvailability();
 			marchQueueLimitReached = !marchesAvailable.available();
+			if (intelMarchesRemaining <= 0) {
+				marchQueueLimitReached = true;
+			}
+			logInfo(routineLogIntelligenceLine("Intel march counter before dispatch cycle: remaining="
+					+ intelMarchesRemaining + "/" + maxIntelMarches + ", queueLimitReached="
+					+ marchQueueLimitReached + ", marchesAvailable=" + marchesAvailable.available()));
 
 
 			redeemCompletedMissions();
@@ -219,38 +227,22 @@ public IntelligenceRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 			}
 
 
-			if (beastsEnabled && shouldProcessBeastsFlow()) {
-				if (handleBeastIntel()) {
-					anyIntelProcessed = true;
-				}
+			MarchDispatchResult marchDispatchResult = processMarchBoundMissionsBurstFlow(marchesAvailable);
+			marchesAvailable = marchDispatchResult.marchesAvailable();
+			if (marchDispatchResult.dispatchedAny()) {
+				anyIntelProcessed = true;
+			}
+			logInfo(routineLogIntelligenceLine("Intel march counter after dispatch cycle: remaining="
+					+ intelMarchesRemaining + "/" + maxIntelMarches + ", queueLimitReached="
+					+ marchQueueLimitReached + ", marchesAvailable=" + marchesAvailable.available()));
+
+			int nonMarchProcessed = processNonMarchMissionsBurstFlow();
+			if (nonMarchProcessed > 0) {
+				anyIntelProcessed = true;
 			}
 
 
-			if (survivorCampsEnabled) {
-				intelScreenHelper.ensureOnIntelScreen();
-				logInfo(routineLogIntelligenceLine("Scanning for survivor camps using grayscale matching."));
-				TemplatesEnum survivorTemplate = fcEra ? TemplatesEnum.INTEL_SURVIVOR_GRAYSCALE_FC
-						: TemplatesEnum.INTEL_SURVIVOR_GRAYSCALE;
-				if (seekAndProcessGrayscale(survivorTemplate, this::handleSurvivor)) {
-					anyIntelProcessed = true;
-					nonBeastIntelProcessed = true;
-				}
-			}
-
-
-			if (explorationsEnabled) {
-				intelScreenHelper.ensureOnIntelScreen();
-				logInfo(routineLogIntelligenceLine("Scanning for explorations using grayscale matching."));
-				TemplatesEnum journeyTemplate = fcEra ? TemplatesEnum.INTEL_JOURNEY_GRAYSCALE_FC
-						: TemplatesEnum.INTEL_JOURNEY_GRAYSCALE;
-				if (seekAndProcessGrayscale(journeyTemplate, this::handleJourney)) {
-					anyIntelProcessed = true;
-					nonBeastIntelProcessed = true;
-				}
-			}
-
-
-			manageRescheduling(anyIntelProcessed, nonBeastIntelProcessed, marchesAvailable);
+			manageRescheduling(anyIntelProcessed, marchesAvailable);
 		}
 		} finally {
 			finalizePostIntelTaskFlow();
@@ -336,6 +328,9 @@ private enum GatherTypeShape {
 public record MarchesAvailable(boolean available, LocalDateTime rescheduleTo) {
 	}
 
+public record MarchDispatchResult(boolean dispatchedAny, MarchesAvailable marchesAvailable) {
+	}
+
 private void tryRescheduleFromCooldownFlow() {
 		logInfo(routineLogIntelligenceLine("Zero intel items detected. Attempting to read the cooldown timer."));
 
@@ -384,12 +379,6 @@ private boolean shouldProcessBeastsFlow() {
 			logInfo(routineLogIntelligenceLine("Internal Intel march counter exhausted (0/" + maxIntelMarches
 					+ "). Skipping Beast/Fire Beast until marches return."));
 			marchQueueLimitReached = true;
-			return false;
-		}
-
-
-		if (useFlag && beastMarchSent) {
-			logInfo(routineLogIntelligenceLine("Beast march already sent (flag mode), skipping beast search."));
 			return false;
 		}
 
@@ -442,8 +431,7 @@ private MarchesAvailable resolveMarchesAvailable() {
 		logInfo(routineLogIntelligenceLine("Zero idle marches detected via OCR. Analyzing gather march queues..."));
 
 
-		int totalMarchesAvailable = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT,
-				Integer.class);
+		int totalMarchesAvailable = maxIntelMarches > 0 ? maxIntelMarches : MAX_INTEL_MARCH_SLOTS;
 		int activeMarchQueues = 0;
 		LocalDateTime earliestAvailableMarch = LocalDateTime.now().plusHours(14);
 
@@ -994,7 +982,7 @@ private boolean hasEnoughStaminaFlow() {
 		return true;
 	}
 
-private void manageRescheduling(boolean anyIntelProcessed, boolean nonBeastIntelProcessed,
+private void manageRescheduling(boolean anyIntelProcessed,
 			MarchesAvailable marchesAvailable) {
 		sleepTask(500);
 
@@ -1003,10 +991,11 @@ private void manageRescheduling(boolean anyIntelProcessed, boolean nonBeastIntel
 		boolean onlyMarchBoundMissionsLeft = missionsStillAvailable && !nonMarchBoundMissionAvailable;
 
 		if (onlyMarchBoundMissionsLeft && marchQueueLimitReached) {
-			LocalDateTime waitUntil = resolveMarchReturnWaitTimeFlow(marchesAvailable);
+			LocalDateTime waitUntil = determineNextIntelResumeTimeFlow(marchesAvailable);
 			reschedule(waitUntil);
 			logInfo(routineLogIntelligenceLine("Only march-bound intel missions remain and all Intel marches are occupied. "
-					+ "Waiting for march return and rescheduling Intel at: " + waitUntil.format(DATETIME_FORMATTER)));
+					+ "Interrupting Intel and rescheduling at earliest march return: " + waitUntil.format(DATETIME_FORMATTER)
+					+ ". Other tasks can run in the meantime."));
 			processingTask = false;
 			return;
 		}
@@ -1039,24 +1028,282 @@ private void manageRescheduling(boolean anyIntelProcessed, boolean nonBeastIntel
 		return LocalDateTime.now().plusMinutes(5);
 	}
 
+	private LocalDateTime determineNextIntelResumeTimeFlow(MarchesAvailable marchesAvailable) {
+		LocalDateTime fromAvailability = resolveMarchReturnWaitTimeFlow(marchesAvailable);
+		LocalDateTime fromQueue = findEarliestMarchReturnFromQueueFlow();
+
+		if (fromQueue == null) {
+			return fromAvailability;
+		}
+
+		if (fromAvailability == null) {
+			return fromQueue;
+		}
+
+		return fromQueue.isBefore(fromAvailability) ? fromQueue : fromAvailability;
+	}
+
+	private LocalDateTime findEarliestMarchReturnFromQueueFlow() {
+		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime earliest = null;
+
+		marchHelper.openLeftMenuCitySection(false);
+		try {
+			for (int i = 0; i < MARCH_QUEUE_REGIONS.length; i++) {
+				LocalDateTime returnAt = readGatherReturnTimeFlow(i);
+				if (returnAt == null || !returnAt.isAfter(now)) {
+					continue;
+				}
+
+				if (earliest == null || returnAt.isBefore(earliest)) {
+					earliest = returnAt;
+				}
+			}
+		} finally {
+			marchHelper.closeLeftMenu();
+		}
+
+		if (earliest == null) {
+			return null;
+		}
+
+		return earliest.plusSeconds(10);
+	}
+
+	private MarchDispatchResult processMarchBoundMissionsBurstFlow(MarchesAvailable initialAvailability) {
+		MarchesAvailable currentAvailability = initialAvailability;
+		boolean dispatchedAny = false;
+		int dispatchedCount = 0;
+
+		if (!beastsEnabled) {
+			return new MarchDispatchResult(false, currentAvailability);
+		}
+
+		while (processingTask && shouldProcessBeastsFlow()) {
+			logInfo(routineLogIntelligenceLine("March-bound burst iteration start: remaining="
+					+ intelMarchesRemaining + "/" + maxIntelMarches + ", queueLimitReached="
+					+ marchQueueLimitReached));
+			boolean beastDetected = handleBeastIntel();
+			if (!beastDetected) {
+				break;
+			}
+
+			dispatchedAny = true;
+			dispatchedCount++;
+
+			// Keep intel throughput high: claim and process non-march work between dispatches.
+			redeemCompletedMissions();
+			processNonMarchMissionsBurstFlow();
+
+			navigationHelper.ensureCorrectScreenLocation(LaunchPoint.WORLD);
+			currentAvailability = inspectMarchAvailability();
+			marchQueueLimitReached = !currentAvailability.available() || intelMarchesRemaining <= 0;
+			logInfo(routineLogIntelligenceLine("March-bound burst iteration end: remaining="
+					+ intelMarchesRemaining + "/" + maxIntelMarches + ", queueLimitReached="
+					+ marchQueueLimitReached + ", marchesAvailable=" + currentAvailability.available()));
+			if (marchQueueLimitReached) {
+				break;
+			}
+		}
+
+		if (dispatchedAny) {
+			logInfo(routineLogIntelligenceLine("March-bound Intel burst dispatched " + dispatchedCount
+					+ " mission(s) before reaching capacity or search boundary."));
+		}
+
+		return new MarchDispatchResult(dispatchedAny, currentAvailability);
+	}
+
+	private int processNonMarchMissionsBurstFlow() {
+		int processedCount = 0;
+		boolean missionHandled;
+
+		do {
+			missionHandled = false;
+			redeemCompletedMissions();
+
+			if (survivorCampsEnabled) {
+				intelScreenHelper.ensureOnIntelScreen();
+				TemplatesEnum survivorTemplate = fcEra
+						? TemplatesEnum.INTEL_SURVIVOR_GRAYSCALE_FC
+						: TemplatesEnum.INTEL_SURVIVOR_GRAYSCALE;
+				ImageSearchResultData survivor = templateSearchHelper.locatePatternMono(
+						survivorTemplate,
+						SearchConfigConstants.SINGLE_WITH_RETRIES);
+				if (survivor != null && survivor.isFound()) {
+					handleSurvivor(survivor);
+					processedCount++;
+					missionHandled = true;
+					continue;
+				}
+			}
+
+			if (explorationsEnabled) {
+				intelScreenHelper.ensureOnIntelScreen();
+				TemplatesEnum journeyTemplate = fcEra
+						? TemplatesEnum.INTEL_JOURNEY_GRAYSCALE_FC
+						: TemplatesEnum.INTEL_JOURNEY_GRAYSCALE;
+				ImageSearchResultData journey = templateSearchHelper.locatePatternMono(
+						journeyTemplate,
+						SearchConfigConstants.SINGLE_WITH_RETRIES);
+				if (journey != null && journey.isFound()) {
+					handleJourney(journey);
+					processedCount++;
+					missionHandled = true;
+				}
+			}
+		} while (missionHandled && processingTask);
+
+		if (processedCount > 0) {
+			logInfo(routineLogIntelligenceLine("Processed non-march Intel missions in burst: " + processedCount));
+		}
+
+		return processedCount;
+	}
+
 	private void initializeIntelMarchCountersFlow() {
-		int resolved = resolveConfiguredIntelMarchesFlow();
+		int resolved = resolveDynamicProfileMarchCapacityFlow();
+		int initialBudget = resolved;
+		int activeGatherMarches = 0;
+
+		if (useSmartProcessing) {
+			activeGatherMarches = countActiveGatherMarchesFlow();
+			initialBudget = Math.max(0, resolved - activeGatherMarches);
+		}
 
 		maxIntelMarches = resolved;
-		intelMarchesRemaining = resolved;
+		intelMarchesRemaining = initialBudget;
+		marchQueueLimitReached = intelMarchesRemaining <= 0;
 
-		logInfo(routineLogIntelligenceLine("Initialized internal Intel march counter: " + intelMarchesRemaining
-				+ "/" + maxIntelMarches + " (Beast/Fire Beast only)."));
+		logInfo(routineLogIntelligenceLine("Initialized Intel march counter dynamically: remaining="
+				+ intelMarchesRemaining + "/" + maxIntelMarches + ", smart=" + useSmartProcessing
+				+ ", activeGatherMarches=" + activeGatherMarches));
+	}
+
+	private void refreshIntelMarchBudgetIfPossibleFlow() {
+		if (!useSmartProcessing || intelMarchesRemaining > 0) {
+			return;
+		}
+
+		int resolved = resolveDynamicProfileMarchCapacityFlow();
+		int activeGatherMarches = countActiveGatherMarchesFlow();
+		int replenishedBudget = Math.max(0, resolved - activeGatherMarches);
+		if (replenishedBudget <= 0) {
+			logInfo(routineLogIntelligenceLine("Intel march budget refresh found no free slots: profileMax="
+					+ resolved + ", activeGatherMarches=" + activeGatherMarches + "."));
+			return;
+		}
+
+		intelMarchesRemaining = replenishedBudget;
+		marchQueueLimitReached = false;
+		logInfo(routineLogIntelligenceLine("Intel march budget replenished dynamically: remaining="
+				+ intelMarchesRemaining + "/" + maxIntelMarches + ", activeGatherMarches="
+				+ activeGatherMarches));
+	}
+
+	private int countActiveGatherMarchesFlow() {
+		marchHelper.openLeftMenuCitySection(false);
+		try {
+			Set<Integer> gatherQueueIndexes = new HashSet<>();
+
+			for (GatherTypeShape gatherType : GatherTypeShape.values()) {
+				List<ImageSearchResultData> detections = templateSearchHelper.locateAllPatterns(
+						gatherType.getTemplate(),
+						SearchConfig.builder()
+								.withArea(new AreaData(MARCH_QUEUE_REGIONS[0].topLeft(), MARCH_QUEUE_REGIONS[MARCH_QUEUE_REGIONS.length - 1].bottomRight()))
+								.withMaxAttempts(2)
+								.withDelay(150L)
+								.withMaxResults(MARCH_QUEUE_REGIONS.length)
+								.build());
+
+				for (ImageSearchResultData detection : detections) {
+					int queueIndex = findQueueIndexByPointFlow(detection.getPoint());
+					if (queueIndex >= 0) {
+						gatherQueueIndexes.add(queueIndex);
+					}
+				}
+			}
+
+			int activeGatherMarches = gatherQueueIndexes.size();
+			logInfo(routineLogIntelligenceLine("Detected active gathering marches: " + activeGatherMarches));
+			return activeGatherMarches;
+		} finally {
+			marchHelper.closeLeftMenu();
+		}
+	}
+
+	private int resolveDynamicProfileMarchCapacityFlow() {
+		int idleMarches = countIdleMarchesFlow();
+		int activeMarchSlots = countActiveMarchSlotsFlow();
+		int resolved = idleMarches + activeMarchSlots;
+
+		if (resolved <= 0) {
+			resolved = resolveConfiguredIntelMarchesFlow();
+			logInfo(routineLogIntelligenceLine("Dynamic profile march detection returned 0 slots. Using fallback capacity: "
+					+ resolved));
+		} else {
+			resolved = Math.max(MIN_INTEL_MARCH_SLOTS, Math.min(MAX_INTEL_MARCH_SLOTS, resolved));
+			if (intelMarchCapacityOverride != null) {
+				resolved = Math.min(resolved, intelMarchCapacityOverride);
+			}
+		}
+
+		logInfo(routineLogIntelligenceLine("Resolved dynamic profile march capacity: idle=" + idleMarches
+				+ ", active=" + activeMarchSlots + ", override=" + intelMarchCapacityOverride
+				+ ", effective=" + resolved));
+		return resolved;
+	}
+
+	private int countActiveMarchSlotsFlow() {
+		marchHelper.openLeftMenuCitySection(false);
+		try {
+			SearchConfig searchConfig = SearchConfig.builder()
+					.withArea(new AreaData(MARCH_QUEUE_REGIONS[0].topLeft(), MARCH_QUEUE_REGIONS[MARCH_QUEUE_REGIONS.length - 1].bottomRight()))
+					.withMaxAttempts(2)
+					.withDelay(150L)
+					.withMaxResults(MARCH_QUEUE_REGIONS.length)
+					.build();
+
+			Set<Integer> activeQueueIndexes = new HashSet<>();
+
+			collectQueueIndexesFromSearchResultsFlow(activeQueueIndexes,
+					locateAllPatternsWithMonoFallback(TemplatesEnum.MARCHES_AREA_RECALL_BUTTON, searchConfig));
+			collectQueueIndexesFromSearchResultsFlow(activeQueueIndexes,
+					locateAllPatternsWithMonoFallback(TemplatesEnum.MARCHES_AREA_VIEW_BUTTON, searchConfig));
+			collectQueueIndexesFromSearchResultsFlow(activeQueueIndexes,
+					locateAllPatternsWithMonoFallback(TemplatesEnum.MARCHES_AREA_SPEEDUP_BUTTON, searchConfig));
+
+			int activeSlots = activeQueueIndexes.size();
+			logInfo(routineLogIntelligenceLine("Detected active march slots (all types): " + activeSlots));
+			return activeSlots;
+		} finally {
+			marchHelper.closeLeftMenu();
+		}
+	}
+
+	private void collectQueueIndexesFromSearchResultsFlow(Set<Integer> queueIndexes,
+			List<ImageSearchResultData> detections) {
+		if (detections == null || detections.isEmpty()) {
+			return;
+		}
+
+		for (ImageSearchResultData detection : detections) {
+			int queueIndex = findQueueIndexByPointFlow(detection.getPoint());
+			if (queueIndex >= 0) {
+				queueIndexes.add(queueIndex);
+			}
+		}
 	}
 
 	private int resolveConfiguredIntelMarchesFlow() {
-		// Changed by pernerch | Date: 2026-07-04 | Why: keep one source of truth for configured march capacity plus runtime override.
-		Integer configuredMarches = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, Integer.class);
-		int resolved = configuredMarches != null ? configuredMarches : MAX_INTEL_MARCH_SLOTS;
+		// Intel fallback capacity is based on profile march ceiling, not gather/autojoin task limits.
+		int resolved = MAX_INTEL_MARCH_SLOTS;
 		resolved = Math.max(MIN_INTEL_MARCH_SLOTS, Math.min(MAX_INTEL_MARCH_SLOTS, resolved));
 		if (intelMarchCapacityOverride != null) {
 			resolved = Math.min(resolved, intelMarchCapacityOverride);
 		}
+		logInfo(routineLogIntelligenceLine("Resolved Intel fallback march capacity: base="
+				+ MAX_INTEL_MARCH_SLOTS + ", override=" + intelMarchCapacityOverride + ", effective=" + resolved));
 		return resolved;
 	}
 
@@ -1219,11 +1466,6 @@ private void handleJourney(ImageSearchResultData result) {
 private void handleBeast(ImageSearchResultData beast) {
 		if (marchQueueLimitReached) {
 			logInfo(routineLogIntelligenceLine("Beast detected but march queue is full. Skipping deployment but marking as detected."));
-			return;
-		}
-
-		if (useFlag && beastMarchSent) {
-			logInfo(routineLogIntelligenceLine("Beast march already sent with flag. Skipping beast hunt."));
 			return;
 		}
 

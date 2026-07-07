@@ -189,6 +189,18 @@ public class TaskManagerLayoutController implements ProfileDataChangeListener {
 		tabPaneProfiles.setManaged(true);
 	}
 
+	public void showTimelineStartupView() {
+		showingGanttView = true;
+		showGanttView();
+		setToggleButtonLabel();
+	}
+
+	public void showTableStartupView() {
+		showingGanttView = false;
+		showTableView();
+		setToggleButtonLabel();
+	}
+
 	private void applyFilter(String filterText) {
 		String filter = filterText == null ? "" : filterText.toLowerCase().trim();
 		filteredTasks.values().forEach(filteredList -> filteredList.setPredicate(task -> filter.isEmpty()

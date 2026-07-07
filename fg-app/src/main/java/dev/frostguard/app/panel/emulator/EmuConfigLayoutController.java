@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.BotStartupScreenEnum;
 import dev.frostguard.api.configs.HelpOnlyModeSettings;
 import dev.frostguard.engine.emulator.EmulatorType;
 import dev.frostguard.api.configs.GameVersionEnum;
@@ -75,6 +76,9 @@ public class EmuConfigLayoutController {
 	private ComboBox<GameVersionEnum> comboboxGameRegion;
 
 	@FXML
+	private ComboBox<BotStartupScreenEnum> comboboxStartupScreen;
+
+	@FXML
 	private ComboBox<IdleBehaviorEnum> comboboxInactivityPolicy;
 
 	// Changed by pernerch | Date: 2026-07-04 | Why: expose dedicated stop behavior for manual GUI stop.
@@ -133,6 +137,7 @@ public class EmuConfigLayoutController {
 		restoreSettingsFromConfig(globalConfig);
 		attachPersistenceListeners();
 		configureGameAndIdleDropdowns(globalConfig);
+		configureBotSettings(globalConfig);
 		configureStopBehaviorDropdowns(globalConfig);
 		configureAutoStartSection(globalConfig);
 		configureHelpOnlySection(globalConfig);
@@ -539,6 +544,24 @@ public class EmuConfigLayoutController {
 				if (chosenBehavior.shouldSendToBackground()) {
 					warnAboutConcurrentInstances();
 				}
+			}
+		});
+	}
+
+	private void configureBotSettings(Map<String, String> cfg) {
+		comboboxStartupScreen.setItems(FXCollections.observableArrayList(BotStartupScreenEnum.values()));
+		BotStartupScreenEnum savedStartupScreen = BotStartupScreenEnum.parse(
+				cfg.getOrDefault(
+						ConfigurationKeyEnum.BOT_STARTUP_SCREEN_STRING.name(),
+						ConfigurationKeyEnum.BOT_STARTUP_SCREEN_STRING.getDefaultValue()));
+		comboboxStartupScreen.setValue(savedStartupScreen);
+
+		comboboxStartupScreen.setOnAction(evt -> {
+			BotStartupScreenEnum selected = comboboxStartupScreen.getValue();
+			if (selected != null) {
+				ScheduleService.obtain().persistEmulatorPath(
+						ConfigurationKeyEnum.BOT_STARTUP_SCREEN_STRING.name(),
+						selected.name());
 			}
 		});
 	}

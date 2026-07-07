@@ -247,11 +247,10 @@ public class GatherRoutine extends DelayedTask {
                 .filter(this::isTypeEnabled)
                 .collect(Collectors.toList());
 
-        loadRotationPool();
-        if (rotationPool != null) {
-            rotationPool.retainAll(enabledTypes);
-            saveRotationPool(); // Ensure consistent state
-        }
+        // Always rebuild pool from the current profile settings on init.
+        // Persisted pool state is runtime-only and should not override fresh profile config.
+        rotationPool = new ArrayList<>(enabledTypes);
+        saveRotationPool();
 
         this.textHelper = new ResilientOcrExecutor<>(provider);
         this.earliestReschedule = null;

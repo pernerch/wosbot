@@ -25,6 +25,7 @@ import dev.frostguard.app.panel.city.CityEventsExtraLayoutController;
 import dev.frostguard.app.panel.city.CityEventsLayoutController;
 import dev.frostguard.app.panel.city.CityUpgradesLayoutController;
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.BotStartupScreenEnum;
 import dev.frostguard.api.configs.HelpOnlyModeSettings;
 import dev.frostguard.api.configs.TpMessageSeverityEnum;
 import dev.frostguard.app.panel.console.ConsoleLogLayoutController;
@@ -136,6 +137,12 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
     private Label logoSurvival;
     @FXML
     private VBox sidebarHeader;
+
+    private Button controlPinnedButton;
+    private Button configPinnedButton;
+    private TabPane controlTabs;
+    private TabPane configTabs;
+    private TaskManagerLayoutController pinnedTaskManagerController;
 
     // Custom Title Bar FXML
     @FXML private javafx.scene.layout.StackPane titleBar;
@@ -487,6 +494,7 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
         ConsoleLogLayoutController logsCtrl = consoleLogLayoutController;
         ProfileManagerLayoutController profilesCtrl = profileManagerLayoutController;
         TaskManagerLayoutController taskCtrl = new TaskManagerLayoutController();
+        pinnedTaskManagerController = taskCtrl;
         CustomTasksLayoutController customTasksCtrl = new CustomTasksLayoutController();
 
         Parent logsPane = loadNode("ConsoleLogLayout", logsCtrl);
@@ -494,10 +502,7 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
         Parent taskPane = loadNode("TaskManagerLayout", taskCtrl);
         Parent customTasksPane = loadNode("CustomTasksLayout", customTasksCtrl);
 
-        // Show Logs by default on startup
-        setMainContent(logsPane);
-
-        TabPane controlTabs = new TabPane();
+        controlTabs = new TabPane();
         controlTabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         controlTabs.getTabs().addAll(
                 makeTab("Logs", logsPane),
@@ -508,7 +513,7 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
         controlTabs.setMaxWidth(Double.MAX_VALUE);
         controlTabs.setMaxHeight(Double.MAX_VALUE);
 
-        addPinnedButton("Control", MaterialDesignC.CONTROLLER_CLASSIC, controlTabs);
+        controlPinnedButton = addPinnedButton("Control", MaterialDesignC.CONTROLLER_CLASSIC, controlTabs);
 
         // Config pinned button — TabPane with Emulators + Telegram
         EmuConfigLayoutController configCtrl = new EmuConfigLayoutController();
@@ -517,7 +522,7 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
         TelegramLayoutController telegramCtrl = new TelegramLayoutController();
         Parent telegramPane = loadNode("TelegramLayout", telegramCtrl);
 
-        TabPane configTabs = new TabPane();
+        configTabs = new TabPane();
         configTabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         configTabs.getTabs().addAll(
                 makeTab("Emulators", configPane),
@@ -526,7 +531,69 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
         configTabs.setMaxWidth(Double.MAX_VALUE);
         configTabs.setMaxHeight(Double.MAX_VALUE);
 
-        addPinnedButton("Config", MaterialDesignC.COG_OUTLINE, configTabs);
+        configPinnedButton = addPinnedButton("Config", MaterialDesignC.COG_OUTLINE, configTabs);
+
+        applyConfiguredStartupScreen(logsPane);
+    }
+
+    private void applyConfiguredStartupScreen(Parent fallbackContent) {
+        Map<String, String> globalConfig = ConfigService.obtain().loadGlobalSettings();
+        BotStartupScreenEnum startupScreen = BotStartupScreenEnum.parse(
+                globalConfig.getOrDefault(
+                        ConfigurationKeyEnum.BOT_STARTUP_SCREEN_STRING.name(),
+                        ConfigurationKeyEnum.BOT_STARTUP_SCREEN_STRING.getDefaultValue()));
+
+        switch (startupScreen) {
+            case CONTROL_TASKS_TIMELINE -> showControlStartupScreen(2, true);
+            case CONTROL_TASKS_TABLE -> showControlStartupScreen(2, false);
+            case CONTROL_PROFILES -> showControlStartupScreen(1, false);
+            case CONFIG_EMULATORS -> showConfigStartupScreen(0);
+            case CONFIG_TELEGRAM -> showConfigStartupScreen(1);
+            case CONTROL_LOGS -> showControlStartupScreen(0, false);
+            default -> setMainContent(fallbackContent);
+        }
+    }
+
+    private void showControlStartupScreen(int tabIndex, boolean timelineView) {
+        if (controlTabs == null) {
+            return;
+        }
+
+        controlTabs.getSelectionModel().select(Math.max(0, Math.min(tabIndex, controlTabs.getTabs().size() - 1)));
+        setMainContent(controlTabs);
+        markPinnedButtonActive(controlPinnedButton);
+
+        if (tabIndex == 2 && pinnedTaskManagerController != null) {
+            if (timelineView) {
+                pinnedTaskManagerController.showTimelineStartupView();
+            } else {
+                pinnedTaskManagerController.showTableStartupView();
+            }
+        }
+    }
+
+    private void showConfigStartupScreen(int tabIndex) {
+        if (configTabs == null) {
+            return;
+        }
+
+        configTabs.getSelectionModel().select(Math.max(0, Math.min(tabIndex, configTabs.getTabs().size() - 1)));
+        setMainContent(configTabs);
+        markPinnedButtonActive(configPinnedButton);
+    }
+
+    private void markPinnedButtonActive(Button activeButton) {
+        for (Node node : buttonsContainer.getChildren()) {
+            if (node instanceof Button) node.getStyleClass().remove("active");
+        }
+        if (null != pinnedButtonsContainer) {
+            for (Node node : pinnedButtonsContainer.getChildren()) {
+                if (node instanceof Button) node.getStyleClass().remove("active");
+            }
+        }
+        if (activeButton != null) {
+            activeButton.getStyleClass().add("active");
+        }
     }
 
     private Tab makeTab(String title, Parent content) { /* internal */

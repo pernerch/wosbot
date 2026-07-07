@@ -7,7 +7,6 @@ import java.util.List;
 import dev.frostguard.vision.convert.GameTimeUtils;
 import dev.frostguard.data.entity.DailyTask;
 import dev.frostguard.data.repository.DailyTaskRepository;
-import dev.frostguard.data.repository.DailyTaskRepository;
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
@@ -29,6 +28,8 @@ public class HeroMissionEventRoutine extends DelayedTask {
     private final int minStaminaLevel = 100;
     private final DailyTaskRepository iDailyTaskRepository = DailyTaskRepository.getRepository();
     private final TaskManagementService taskManagementService = TaskManagementService.shared();
+    private static final int HERO_MISSION_OCR_STREAK_STAGE_1 = 1;
+    private static final int HERO_MISSION_OCR_STREAK_STAGE_2 = 2;
     private int flagNumber = 0;
     private boolean useFlag = false;
 
@@ -109,10 +110,26 @@ public class HeroMissionEventRoutine extends DelayedTask {
         ReaperAvailabilityResult reaperStatus = reapersAvailable();
 
         if (reaperStatus.isOcrError()) {
-            logWarning("OCR error while checking reaper availability. Retrying in 5 minutes.");
-            reschedule(LocalDateTime.now().plusMinutes(5));
+            int ocrErrorStreak = incrementHeroMissionOcrErrorStreakFlow();
+            if (ocrErrorStreak == HERO_MISSION_OCR_STREAK_STAGE_1) {
+                logWarning("OCR error while checking reaper availability (streak 1). Retrying in 5 minutes.");
+                reschedule(LocalDateTime.now().plusMinutes(5));
+                return;
+            }
+
+            if (ocrErrorStreak == HERO_MISSION_OCR_STREAK_STAGE_2) {
+                logWarning("OCR error while checking reaper availability (streak 2). Retrying in 2 hours.");
+                reschedule(LocalDateTime.now().plusHours(2));
+                return;
+            }
+
+            logWarning("OCR error while checking reaper availability (streak " + ocrErrorStreak
+                    + "). Event is likely only pre-announced. Rescheduling to next reset.");
+            reschedule(GameTimeUtils.dailyResetTime());
             return;
         }
+
+        resetHeroMissionOcrErrorStreakFlow();
 
         if (!reaperStatus.isAvailable()) {
             logInfo("No reapers available. Rescheduling task for next reset.");
@@ -255,6 +272,23 @@ public class HeroMissionEventRoutine extends DelayedTask {
             }
         }
 
+    }
+
+    private int incrementHeroMissionOcrErrorStreakFlow() {
+        Integer current = profile.getConfig(ConfigurationKeyEnum.HERO_MISSION_OCR_ERROR_STREAK_INT, Integer.class);
+        int next = (current == null ? 0 : current) + 1;
+        profile.setConfig(ConfigurationKeyEnum.HERO_MISSION_OCR_ERROR_STREAK_INT, next);
+        return next;
+    }
+
+    private void resetHeroMissionOcrErrorStreakFlow() {
+        Integer current = profile.getConfig(ConfigurationKeyEnum.HERO_MISSION_OCR_ERROR_STREAK_INT, Integer.class);
+        if (current == null || current == 0) {
+            return;
+        }
+
+        profile.setConfig(ConfigurationKeyEnum.HERO_MISSION_OCR_ERROR_STREAK_INT, 0);
+        logInfo("Hero Mission OCR error streak reset to 0 after successful availability check.");
     }
 
     private ReaperAvailabilityResult reapersAvailable() {

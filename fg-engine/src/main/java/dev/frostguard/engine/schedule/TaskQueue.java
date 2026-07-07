@@ -588,7 +588,7 @@ public class TaskQueue {
             // Changed by pernerch | Date: 2026-07-02 | Why: keep single-profile-per-emulator
             // setups on the original idle path; only evaluate handover when siblings exist.
             if (hasEnabledSiblingOnSameEmulator()) {
-                Optional<PeerSwitchCandidate> peerCandidate = findBestOverduePeerOnSameEmulator();
+                Optional<PeerSwitchCandidate> peerCandidate = findBestPeerOnSameEmulator();
                 if (peerCandidate.isPresent()) {
                     handoverSlotToPeer(peerCandidate.get());
                     statusModel.setIdleTimeExceeded(true);
@@ -607,7 +607,7 @@ public class TaskQueue {
         }
     }
 
-    private Optional<PeerSwitchCandidate> findBestOverduePeerOnSameEmulator() {
+    private Optional<PeerSwitchCandidate> findBestPeerOnSameEmulator() {
         if (profile == null || profile.getEmulatorNumber() == null || profile.getEmulatorNumber().isBlank()) {
             return Optional.empty();
         }
@@ -617,7 +617,7 @@ public class TaskQueue {
             return Optional.empty();
         }
 
-        return ProfileService.obtain().fetchAllAccounts().stream()
+        List<PeerSwitchCandidate> candidates = ProfileService.obtain().fetchAllAccounts().stream()
                 .filter(other -> other != null && other.getId() != null && !other.getId().equals(profile.getId()))
                 .filter(other -> Boolean.TRUE.equals(other.getEnabled()))
                 .filter(other -> profile.getEmulatorNumber().equals(other.getEmulatorNumber()))
@@ -626,14 +626,31 @@ public class TaskQueue {
                     if (q == null || !q.isActive()) {
                         return null;
                     }
-                    Optional<OverdueRunnableSnapshot> snapshot = q.peekMostRelevantOverdueRunnableTask();
+                    Optional<PeerSwitchTaskSnapshot> snapshot = q.peekNextPeerSwitchTask();
                     return snapshot.map(value -> new PeerSwitchCandidate(other, q, value)).orElse(null);
                 })
                 .filter(Objects::nonNull)
-                .max(Comparator
-                        .comparingInt((PeerSwitchCandidate c) -> c.overdue().taskPriority())
-                        .thenComparingLong(c -> c.account().getPriority())
-                        .thenComparingLong(c -> c.overdue().overdueSeconds()));
+                .toList();
+
+        if (candidates.isEmpty()) {
+            return Optional.empty();
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        boolean allCandidatesOverdue = candidates.stream()
+                .allMatch(candidate -> !candidate.task().scheduledAt().isAfter(now));
+
+        if (allCandidatesOverdue) {
+            return candidates.stream().max(Comparator
+                .comparingLong((PeerSwitchCandidate c) -> c.account().getPriority())
+                .thenComparingInt(c -> c.task().taskPriority())
+                .thenComparingLong(c -> c.task().overdueSeconds()));
+        }
+
+        return candidates.stream().min(Comparator
+            .comparing((PeerSwitchCandidate c) -> c.task().scheduledAt())
+            .thenComparing((PeerSwitchCandidate c) -> c.task().taskPriority(), Comparator.reverseOrder())
+            .thenComparing((PeerSwitchCandidate c) -> c.account().getPriority(), Comparator.reverseOrder()));
     }
 
     private boolean hasEnabledSiblingOnSameEmulator() {
@@ -650,14 +667,15 @@ public class TaskQueue {
     }
 
     private void handoverSlotToPeer(PeerSwitchCandidate candidate) {
-        OverdueRunnableSnapshot overdue = candidate.overdue();
+        PeerSwitchTaskSnapshot task = candidate.task();
         emitInfo(String.format(
-                "Idle exceeded - handing emulator slot to profile '%s' (task=%s, taskPriority=%d, profilePriority=%d, overdue=%ds)",
+            "Idle exceeded - handing emulator slot to profile '%s' (task=%s, taskPriority=%d, profilePriority=%d, scheduled=%s, overdue=%ds)",
                 candidate.account().getName(),
-                overdue.taskType(),
-                overdue.taskPriority(),
+            task.taskType(),
+            task.taskPriority(),
                 candidate.account().getPriority(),
-                overdue.overdueSeconds()));
+            task.scheduledAt().format(TS_FMT),
+            task.overdueSeconds()));
 
         try {
             deviceBridge.releaseEmulatorSlot(profile);
@@ -672,7 +690,30 @@ public class TaskQueue {
 
     private record PeerSwitchCandidate(AccountDescriptor account,
                                        TaskQueue queue,
-                                       OverdueRunnableSnapshot overdue) {
+                                       PeerSwitchTaskSnapshot task) {
+    }
+
+	public record PeerSwitchTaskSnapshot(String taskName,
+	                                    TpDailyTaskEnum taskType,
+	                                    int taskPriority,
+	                                    long overdueSeconds,
+	                                    LocalDateTime scheduledAt) {
+	}
+
+    public synchronized Optional<PeerSwitchTaskSnapshot> peekNextPeerSwitchTask() {
+        LocalDateTime now = LocalDateTime.now();
+
+        return taskBacklog.stream()
+                .filter(t -> t.getTpTask() != TpDailyTaskEnum.INITIALIZE)
+                .min(Comparator
+                        .comparing(DelayedTask::getScheduled)
+                        .thenComparing((DelayedTask t) -> rankingStrategy.getPriority(t), Comparator.reverseOrder()))
+                .map(t -> new PeerSwitchTaskSnapshot(
+                        t.getTaskName(),
+                        t.getTpTask(),
+                        rankingStrategy.getPriority(t),
+                        Math.max(0, Duration.between(t.getScheduled(), now).getSeconds()),
+                        t.getScheduled()));
     }
 
     public record OverdueRunnableSnapshot(String taskName,

@@ -268,9 +268,16 @@ public final class TesseractOcrProvider {
     // =====================================================================
 
     /**
-     * Extracts a rectangular region, magnifies by nearest-neighbour, and
-     * optionally binarises by proximity to a target text colour.
-     * All three passes are fused into a single traversal.
+     * Extracts a rectangular region and magnifies it for OCR. When isolating
+     * text ({@code stripBackground} + {@code textColour}), the region is turned
+     * into a <em>soft</em> distance-to-target grayscale (anti-aliased) rather
+     * than a hard black/white mask, then upscaled <em>bilinearly</em>.
+     *
+     * <p>The previous approach — hard per-pixel binarisation blown up by
+     * nearest-neighbour — produced blocky, stair-stepped glyph edges that made
+     * the LSTM flip borderline digits on clean input (verified: 2->7, 5->3).
+     * A smooth grayscale keeps the "background removed" benefit while giving
+     * Tesseract the anti-aliased edges its model was trained on.
      */
     private static BufferedImage cropAndPreprocess(RawImageData capture,
             int cx, int cy, int cw, int ch, int scale,
@@ -279,39 +286,41 @@ public final class TesseractOcrProvider {
         byte[] raw = capture.getData();
         int bpp = capture.getBpp();
         int srcStride = capture.getWidth();
-        int outW = cw * scale;
-        int outH = ch * scale;
-        int[] pixels = new int[outW * outH];
+        boolean isolate = stripBackground && textColour != null;
 
         int tR = 0, tG = 0, tB = 0;
-        if (stripBackground && textColour != null) {
+        if (isolate) {
             tR = textColour.getRed();
             tG = textColour.getGreen();
             tB = textColour.getBlue();
         }
 
-        for (int oy = 0; oy < outH; oy++) {
-            for (int ox = 0; ox < outW; ox++) {
-                int sx = cx + ox / scale;
-                int sy = cy + oy / scale;
-                int rgb = decodePixel(raw, bpp, srcStride, sx, sy);
-
-                if (stripBackground && textColour != null) {
-                    int pr = (rgb >> 16) & 0xFF;
-                    int pg = (rgb >> 8)  & 0xFF;
-                    int pb = rgb & 0xFF;
-                    boolean nearTarget = Math.abs(pr - tR) <= CHANNEL_TOLERANCE
-                            && Math.abs(pg - tG) <= CHANNEL_TOLERANCE
-                            && Math.abs(pb - tB) <= CHANNEL_TOLERANCE;
-                    pixels[oy * outW + ox] = nearTarget ? 0x000000 : 0xFFFFFF;
+        // Native-resolution intermediate: soft grayscale when isolating text
+        // (0 = exact text colour -> dark, >= tolerance -> light), else raw colour.
+        int[] px = new int[cw * ch];
+        for (int y = 0; y < ch; y++) {
+            for (int x = 0; x < cw; x++) {
+                int rgb = decodePixel(raw, bpp, srcStride, cx + x, cy + y);
+                if (isolate) {
+                    int pr = (rgb >> 16) & 0xFF, pg = (rgb >> 8) & 0xFF, pb = rgb & 0xFF;
+                    int dist = Math.max(Math.abs(pr - tR), Math.max(Math.abs(pg - tG), Math.abs(pb - tB)));
+                    int v = Math.min(255, dist * 255 / CHANNEL_TOLERANCE);
+                    px[y * cw + x] = (v << 16) | (v << 8) | v;
                 } else {
-                    pixels[oy * outW + ox] = rgb;
+                    px[y * cw + x] = rgb;
                 }
             }
         }
+        BufferedImage base = new BufferedImage(cw, ch, BufferedImage.TYPE_INT_RGB);
+        base.setRGB(0, 0, cw, ch, px, 0, cw);
 
+        // Smooth (bilinear) upscale — replaces the old nearest-neighbour blow-up.
+        int outW = cw * scale, outH = ch * scale;
         BufferedImage result = new BufferedImage(outW, outH, BufferedImage.TYPE_INT_RGB);
-        result.setRGB(0, 0, outW, outH, pixels, 0, outW);
+        Graphics2D g = result.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.drawImage(base, 0, 0, outW, outH, null);
+        g.dispose();
         return result;
     }
 

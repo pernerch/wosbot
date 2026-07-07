@@ -31,6 +31,10 @@ private static final AreaData QUEUE_AREA_1_VALUE = new AreaData(new PointData(95
 
 private static final AreaData QUEUE_AREA_2_VALUE = new AreaData(new PointData(95, 450), new PointData(358, 474));
 
+private static final AreaData BUILDING_ACTION_BUTTON_AREA_VALUE = new AreaData(new PointData(190, 1160), new PointData(530, 1250));
+
+private static final AreaData BUILDING_CONFIRM_BUTTON_AREA_VALUE = new AreaData(new PointData(489, 1034), new PointData(500, 1050));
+
 private final List<AreaData> queues = new ArrayList<>(Arrays.asList(QUEUE_AREA_1_VALUE, QUEUE_AREA_2_VALUE));
 
 public UpgradeBuildingsRoutine(AccountDescriptor profile, TpDailyTaskEnum tpDailyTaskEnum) {
@@ -396,17 +400,55 @@ private void handleCityBuilding() {
         }
 
 
-        tapRandomPoint(upgradeButton.getPoint(), upgradeButton.getPoint());
+        startBuildingAction("upgrade", upgradeButton.getPoint(), upgradeButton.getPoint());
+    }
+
+private void handleNewBuilding() {
+        logInfo(routineLogUpgradeBuildingsLine("Handling New Building"));
+
+        if (!isBuildButtonVisible()) {
+            logWarning(routineLogUpgradeBuildingsLine("Build button not detected"));
+            return;
+        }
+
+        startBuildingAction("build", BUILDING_ACTION_BUTTON_AREA_VALUE.topLeft(), BUILDING_ACTION_BUTTON_AREA_VALUE.bottomRight());
+    }
+
+private void startBuildingAction(String actionName, PointData buttonTopLeft, PointData buttonBottomRight) {
+        logInfo(routineLogUpgradeBuildingsLine("Starting building " + actionName + "..."));
+
+        tapRandomPoint(buttonTopLeft, buttonBottomRight);
         sleepTask(1000);
 
 
         refillResourcesIfNeededFlow();
 
 
-        tapRandomPoint(new PointData(489, 1034), new PointData(500, 1050));
+        tapRandomPoint(BUILDING_CONFIRM_BUTTON_AREA_VALUE.topLeft(), BUILDING_CONFIRM_BUTTON_AREA_VALUE.bottomRight());
 
 
         requestHelpFlow();
+    }
+
+private boolean isBuildButtonVisible() {
+        try {
+            emuManager.captureScreen(EMULATOR_NUMBER);
+            String buttonText = emuManager.readText(
+                    EMULATOR_NUMBER,
+                    BUILDING_ACTION_BUTTON_AREA_VALUE.topLeft(),
+                    BUILDING_ACTION_BUTTON_AREA_VALUE.bottomRight(),
+                    WHITE_SETTINGS);
+            String normalized = buttonText == null ? "" : buttonText.toLowerCase().replaceAll("[^a-z]", "");
+            logDebug(routineLogUpgradeBuildingsLine("Build button OCR result: '" + buttonText + "'"));
+            boolean detected = normalized.contains("build") || normalized.contains("bui");
+            if (detected) {
+                logInfo(routineLogUpgradeBuildingsLine("Build button detected via OCR: '" + buttonText + "'"));
+            }
+            return detected;
+        } catch (Exception e) {
+            logWarning(routineLogUpgradeBuildingsLine("Build button OCR failed: " + e.getMessage()));
+            return false;
+        }
     }
 
 private void logQueueStateFlow(int queueIndex, UpgradeBuildingsRoutine.QueueSnapshot state) {
@@ -627,6 +669,10 @@ private LocalDateTime handleQueue(UpgradeBuildingsRoutine.QueueReadout queueResu
                 return null;
             } else {
 
+                if (isBuildButtonVisible()) {
+                    handleNewBuilding();
+                    return null;
+                }
 
                 return handleTroopBuilding();
             }

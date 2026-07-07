@@ -25,6 +25,7 @@ import dev.frostguard.app.panel.city.CityEventsExtraLayoutController;
 import dev.frostguard.app.panel.city.CityEventsLayoutController;
 import dev.frostguard.app.panel.city.CityUpgradesLayoutController;
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.HelpOnlyModeSettings;
 import dev.frostguard.api.configs.TpMessageSeverityEnum;
 import dev.frostguard.app.panel.console.ConsoleLogLayoutController;
 import dev.frostguard.app.panel.misc.DebuggingLayoutController;
@@ -39,6 +40,7 @@ import dev.frostguard.app.panel.misc.GiftcodeLayoutController;
 import dev.frostguard.app.panel.heroes.IntelLayoutController;
 import dev.frostguard.app.panel.dailies.MobilizationLayoutController;
 import dev.frostguard.api.domain.BotStateData;
+import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.api.domain.LogMessageData;
 import dev.frostguard.api.domain.QueueProfileStateData;
 import dev.frostguard.app.panel.pets.PetsLayoutController;
@@ -51,6 +53,7 @@ import dev.frostguard.app.panel.profile.ProfileManagerLayoutController;
 import dev.frostguard.api.domain.QueueStateData;
 import dev.frostguard.engine.listener.StaminaChangeListener;
 import dev.frostguard.engine.service.ConfigService;
+import dev.frostguard.engine.service.ProfileService;
 import dev.frostguard.engine.service.ScheduleService;
 import dev.frostguard.engine.service.StaminaService;
 import dev.frostguard.app.panel.economy.ShopLayoutController;
@@ -208,6 +211,10 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
 
     public static LauncherLayoutController getInstance() {
         return instance;
+    }
+
+    public boolean isBotRunning() {
+        return estado;
     }
 
     @FXML
@@ -1070,6 +1077,13 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
         cancelAutoStart();
         Thread startStopThread = Thread.ofVirtual().unstarted(() -> {
             if (!estado) {
+                if (!validateHelpOnlyStartGuard()) {
+                    Platform.runLater(() -> {
+                        buttonStartStop.setText("Start Bot");
+                        buttonStartStop.setDisable(false);
+                    });
+                    return;
+                }
                 Platform.runLater(() -> {
                     buttonStartStop.setText("Starting...");
                     buttonStartStop.setDisable(true);
@@ -1093,6 +1107,13 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
         if (!estado) {
             cancelAutoStart();
             Thread startStopThread = Thread.ofVirtual().unstarted(() -> {
+                if (!validateHelpOnlyStartGuard()) {
+                    Platform.runLater(() -> {
+                        buttonStartStop.setText("Start Bot");
+                        buttonStartStop.setDisable(false);
+                    });
+                    return;
+                }
                 Platform.runLater(() -> {
                     buttonStartStop.setText("Starting...");
                     buttonStartStop.setDisable(true);
@@ -1264,6 +1285,13 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
             if (autoStartSecondsRemaining <= 0) {
                 cancelAutoStart();
                 Thread autoStartThread = Thread.ofVirtual().unstarted(() -> {
+                    if (!validateHelpOnlyStartGuard()) {
+                        Platform.runLater(() -> {
+                            buttonStartStop.setText("Start Bot");
+                            buttonStartStop.setDisable(false);
+                        });
+                        return;
+                    }
                     Platform.runLater(() -> {
                         buttonStartStop.setText("Starting...");
                         buttonStartStop.setDisable(true);
@@ -1300,6 +1328,77 @@ public class LauncherLayoutController implements IProfileLoadListener, StaminaCh
         alert.setHeaderText(null);
         alert.setContentText("The selected queue is not currently running.");
         alert.showAndWait();
+    }
+
+    private boolean validateHelpOnlyStartGuard() { /* internal */
+        Map<String, String> config = ConfigService.obtain().loadGlobalSettings();
+        if (!HelpOnlyModeSettings.isEnabled(config)) {
+            return true;
+        }
+
+        java.util.Set<Long> selectedProfileIds = HelpOnlyModeSettings.parseSelectedProfileIds(config);
+
+        if (selectedProfileIds.isEmpty()) {
+            Platform.runLater(() -> {
+                Alert alert = new Alert(Alert.AlertType.WARNING);
+                alert.setTitle("Help Only Mode");
+                alert.setHeaderText(null);
+                alert.setContentText("Help mode only requires at least one selected profile.");
+                alert.showAndWait();
+            });
+            return false;
+        }
+
+        int maxConcurrent = resolveMaxConcurrentInstances(config);
+    int selectedCount = selectedProfileIds.size();
+        if (selectedCount > maxConcurrent) {
+            Platform.runLater(() -> {
+                Alert alert = new Alert(Alert.AlertType.WARNING);
+                alert.setTitle("Help Only Mode");
+                alert.setHeaderText(null);
+                alert.setContentText("Help Only Mode selection exceeds Max Concurrent Instances (" + maxConcurrent + ").");
+                alert.showAndWait();
+            });
+            return false;
+        }
+
+        Map<String, Integer> selectedPerEmulator = new HashMap<>();
+        List<AccountDescriptor> accounts = ProfileService.obtain().fetchAllAccounts();
+        for (AccountDescriptor profile : accounts) {
+            if (profile == null || profile.getId() == null) {
+                continue;
+            }
+            if (!selectedProfileIds.contains(profile.getId())) {
+                continue;
+            }
+            String key = profile.getEmulatorNumber() == null || profile.getEmulatorNumber().isBlank()
+                    ? "profile-" + profile.getId()
+                    : profile.getEmulatorNumber();
+            int count = selectedPerEmulator.getOrDefault(key, 0) + 1;
+            if (count > 1) {
+                Platform.runLater(() -> {
+                    Alert alert = new Alert(Alert.AlertType.WARNING);
+                    alert.setTitle("Help Only Mode");
+                    alert.setHeaderText(null);
+                    alert.setContentText("Multi-account profiles sharing the same emulator can only select one profile for Help Only Mode.");
+                    alert.showAndWait();
+                });
+                return false;
+            }
+            selectedPerEmulator.put(key, count);
+        }
+
+        return true;
+    }
+
+    private int resolveMaxConcurrentInstances(Map<String, String> config) { /* internal */
+        try {
+            return Math.max(1, Integer.parseInt(config.getOrDefault(
+                    ConfigurationKeyEnum.MAX_RUNNING_EMULATORS_INT.name(),
+                    ConfigurationKeyEnum.MAX_RUNNING_EMULATORS_INT.getDefaultValue())));
+        } catch (NumberFormatException ignored) {
+            return Integer.parseInt(ConfigurationKeyEnum.MAX_RUNNING_EMULATORS_INT.getDefaultValue());
+        }
     }
 
     private ProfileAux findProfileById(Long profileId) { /* internal */

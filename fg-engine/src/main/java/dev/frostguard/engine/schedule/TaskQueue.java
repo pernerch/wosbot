@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.HelpOnlyModeSettings;
 import dev.frostguard.api.configs.IdleBehaviorEnum;
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
@@ -23,6 +24,7 @@ import dev.frostguard.api.configs.TpMessageSeverityEnum;
 import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.ProfileStatusData;
+import dev.frostguard.api.domain.RawImageData;
 import dev.frostguard.api.domain.TaskQueueStatusData;
 import dev.frostguard.api.domain.TaskStateData;
 import dev.frostguard.engine.emulator.EmulatorController;
@@ -31,6 +33,7 @@ import dev.frostguard.engine.error.ADBConnectionException;
 import dev.frostguard.engine.error.HomeNotFoundException;
 import dev.frostguard.engine.error.ProfileInReconnectStateException;
 import dev.frostguard.engine.error.StopExecutionException;
+import dev.frostguard.engine.schedule.inject.HelpAllianceInjectionRule;
 import dev.frostguard.engine.schedule.inject.InjectionRule;
 import dev.frostguard.engine.schedule.preempt.PreemptionRule;
 import dev.frostguard.engine.schedule.priority.DefaultTaskPriorityProvider;
@@ -69,6 +72,10 @@ public class TaskQueue {
     // Changed by pernerch | Date: 2026-07-04 | Why: ensure first startup cycle runs Initialize regardless of idle heuristics.
     private volatile boolean    forceInitialInitialize = true;
     private volatile boolean    shuttingDown = false;
+    private volatile boolean    helpOnlyModeAnnounced = false;
+    private volatile boolean    helpOnlyInitializeCompleted = false;
+
+    private final HelpAllianceInjectionRule helpOnlyInjectionRule = new HelpAllianceInjectionRule();
 
     public TaskQueue(AccountDescriptor profile) { this.profile = profile; }
 
@@ -257,6 +264,17 @@ public class TaskQueue {
             }
             if (enforceSessionCap()) continue;
 
+            boolean helpOnlyModeActive = isHelpOnlyModeActiveForProfile();
+            handleHelpOnlyStateTransition(helpOnlyModeActive);
+            if (helpOnlyModeActive) {
+                if (!helpOnlyInitializeCompleted) {
+                    runHelpOnlyInitializeCycle();
+                    continue;
+                }
+                runHelpOnlyCycle();
+                continue;
+            }
+
             DelayedTask chosen = selectNextTask();
 
             if (chosen != null) {
@@ -279,6 +297,109 @@ public class TaskQueue {
                 }
             }
         }
+    }
+
+    private boolean isHelpOnlyModeActiveForProfile() {
+        if (profile == null || profile.getId() == null) {
+            return false;
+        }
+        Map<String, String> globalSettings = ConfigService.obtain().loadGlobalSettings();
+        return HelpOnlyModeSettings.isEnabledForProfile(globalSettings, profile.getId());
+    }
+
+    private void handleHelpOnlyStateTransition(boolean helpOnlyActive) {
+        if (helpOnlyActive && !helpOnlyModeAnnounced) {
+            emitWarn("Help Only Mode active: all regular tasks are suspended for this profile. Alliance Help Tap remains active.");
+            helpOnlyModeAnnounced = true;
+        } else if (!helpOnlyActive && helpOnlyModeAnnounced) {
+            emitInfo("Help Only Mode disabled: regular task execution resumed for this profile.");
+            helpOnlyModeAnnounced = false;
+            helpOnlyInitializeCompleted = false;
+        }
+    }
+
+    private void runHelpOnlyInitializeCycle() {
+        DelayedTask initializeTask = takeInitializeTaskForHelpOnly();
+        if (initializeTask == null) {
+            emitError("Help Only initialization unavailable: Initialize task could not be created.");
+            helpOnlyInitializeCompleted = true;
+            return;
+        }
+
+        initializeTask.setRecurring(false);
+        initializeTask.reschedule(LocalDateTime.now());
+        boolean initialized = executeTask(initializeTask);
+        statusModel.getLoopState().setExecutedTask(initialized);
+        statusModel.setDelayUntil(LocalDateTime.now().plusSeconds(1));
+
+        if (initialized) {
+            helpOnlyInitializeCompleted = true;
+            emitInfo("Help Only initialization completed. Switching to help-only injections.");
+        } else {
+            broadcastStatus("HELP ONLY MODE: INITIALIZING");
+        }
+    }
+
+    private synchronized DelayedTask takeInitializeTaskForHelpOnly() {
+        DelayedTask prototype = DelayedTaskRegistry.create(TpDailyTaskEnum.INITIALIZE, profile);
+        if (prototype == null) {
+            return null;
+        }
+
+        DelayedTask existing = taskBacklog.stream().filter(t -> t.equals(prototype)).findFirst().orElse(null);
+        if (existing != null) {
+            taskBacklog.remove(existing);
+            return existing;
+        }
+
+        return DelayedTaskRegistry.create(TpDailyTaskEnum.INITIALIZE, profile);
+    }
+
+    private void runHelpOnlyCycle() {
+        boolean executed = false;
+        try {
+            InjectionRule pendingHelpRule = pollHelpOnlyInjection();
+            if (pendingHelpRule != null) {
+                executed = executeInjectionRule(pendingHelpRule);
+            } else {
+                RawImageData frame = deviceBridge.captureScreen(profile.getEmulatorNumber());
+                if (helpOnlyInjectionRule.shouldInject(deviceBridge, profile, frame)) {
+                    executed = executeInjectionRule(helpOnlyInjectionRule);
+                }
+            }
+
+            statusModel.getLoopState().setExecutedTask(executed);
+            statusModel.setDelayUntil(LocalDateTime.now().plusSeconds(1));
+            if (!executed) {
+                broadcastStatus("HELP ONLY MODE ACTIVE");
+            }
+
+            Thread.sleep(executed ? 320 : 620);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+        } catch (Exception ex) {
+            emitError("Help Only cycle failed: " + ex.getMessage());
+        }
+    }
+
+    private InjectionRule pollHelpOnlyInjection() {
+        InjectionRule rule = GlobalMonitorService.getInstance().pollPendingInjection(profile.getId());
+        while (rule != null && !(rule instanceof HelpAllianceInjectionRule)) {
+            rule = GlobalMonitorService.getInstance().pollPendingInjection(profile.getId());
+        }
+        return rule;
+    }
+
+    private boolean executeInjectionRule(InjectionRule rule) {
+        broadcastStatus("Injection: " + rule.getRuleName());
+        emitInfo("Running help-only injection: " + rule.getRuleName());
+        DelayedTask stub = DelayedTaskRegistry.create(TpDailyTaskEnum.INITIALIZE, profile);
+        if (stub == null) {
+            return false;
+        }
+        stub.setTaskName("Help Only Injection");
+        rule.executeInjection(deviceBridge, profile, stub);
+        return true;
     }
 
     private synchronized DelayedTask selectNextTask() {

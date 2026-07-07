@@ -1,16 +1,21 @@
 package dev.frostguard.app.panel.emulator;
 
 import java.io.File;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.HelpOnlyModeSettings;
 import dev.frostguard.engine.emulator.EmulatorType;
 import dev.frostguard.api.configs.GameVersionEnum;
 import dev.frostguard.api.configs.IdleBehaviorEnum;
 import dev.frostguard.api.configs.StopBehaviorEnum;
-import dev.frostguard.app.panel.emulator.EmulatorAux;
 import dev.frostguard.engine.service.ConfigService;
+import dev.frostguard.engine.service.ProfileService;
 import dev.frostguard.engine.service.ScheduleService;
 import dev.frostguard.app.panel.launcher.LauncherLayoutController;
 import javafx.collections.FXCollections;
@@ -19,6 +24,7 @@ import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.ListView;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.RadioButton;
 import javafx.scene.control.TableCell;
@@ -27,7 +33,11 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.control.cell.CheckBoxListCell;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.stage.FileChooser;
+import javafx.util.StringConverter;
 
 /**
  * Controller responsible for the emulator configuration panel.
@@ -96,10 +106,20 @@ public class EmuConfigLayoutController {
 	@FXML
 	private CheckBox checkboxHideAnalyticsLogs;
 
+	@FXML
+	private CheckBox checkboxHelpOnlyMode;
+
+	@FXML
+	private ListView<HelpOnlyProfileItem> listviewHelpOnlyProfiles;
+
 	/* ── Internal state ── */
 
 	private final FileChooser fileChooser = new FileChooser();
 	private final ObservableList<EmulatorAux> emulatorList = FXCollections.observableArrayList();
+	private final ObservableList<HelpOnlyProfileItem> helpOnlyProfiles = FXCollections.observableArrayList();
+	private boolean syncingHelpOnlyState;
+	private boolean lastValidHelpOnlyEnabled;
+	private Set<Long> lastValidHelpOnlySelection = new HashSet<>();
 
 	/* ────────────────────────────────────────────────
 	 *  Lifecycle
@@ -115,6 +135,7 @@ public class EmuConfigLayoutController {
 		configureGameAndIdleDropdowns(globalConfig);
 		configureStopBehaviorDropdowns(globalConfig);
 		configureAutoStartSection(globalConfig);
+		configureHelpOnlySection(globalConfig);
 		configureAnalyticsToggles(globalConfig);
 	}
 
@@ -277,9 +298,211 @@ public class EmuConfigLayoutController {
 				String content = field.getText();
 				if (content != null && !content.isEmpty()) {
 					ScheduleService.obtain().persistEmulatorPath(key.name(), content);
+					if (key == ConfigurationKeyEnum.MAX_RUNNING_EMULATORS_INT && checkboxHelpOnlyMode != null) {
+						validateAndPersistHelpOnlyConfiguration(false);
+					}
 				}
 			}
 		});
+	}
+
+	private void configureHelpOnlySection(Map<String, String> cfg) {
+		listviewHelpOnlyProfiles.setItems(helpOnlyProfiles);
+		listviewHelpOnlyProfiles.setCellFactory(CheckBoxListCell.forListView(
+				HelpOnlyProfileItem::selectedProperty,
+				new StringConverter<>() {
+					@Override
+					public String toString(HelpOnlyProfileItem item) {
+						return item == null ? "" : item.getDisplayLabel();
+					}
+
+					@Override
+					public HelpOnlyProfileItem fromString(String value) {
+						return null;
+					}
+				}));
+
+		helpOnlyProfiles.clear();
+		List<dev.frostguard.api.domain.AccountDescriptor> profiles = ProfileService.obtain().fetchAllAccounts().stream()
+				.filter(p -> p != null && p.getId() != null)
+				.sorted(Comparator
+						.comparingInt((dev.frostguard.api.domain.AccountDescriptor p) -> emulatorSortKey(p.getEmulatorNumber()))
+						.thenComparing(dev.frostguard.api.domain.AccountDescriptor::getName, String.CASE_INSENSITIVE_ORDER))
+				.toList();
+
+		for (dev.frostguard.api.domain.AccountDescriptor profile : profiles) {
+			HelpOnlyProfileItem item = new HelpOnlyProfileItem(
+					profile.getId(),
+					profile.getName(),
+					profile.getEmulatorNumber());
+			item.selectedProperty().addListener((obs, oldValue, newValue) -> validateAndPersistHelpOnlyConfiguration(false));
+			helpOnlyProfiles.add(item);
+		}
+
+		boolean enabled = HelpOnlyModeSettings.isEnabled(cfg);
+		Set<Long> selectedProfileIds = new HashSet<>(HelpOnlyModeSettings.parseSelectedProfileIds(cfg));
+
+		String validationError = enabled ? validateHelpOnlySelectionRules(selectedProfileIds, false) : null;
+		if (validationError != null) {
+			enabled = false;
+			selectedProfileIds.clear();
+			ScheduleService.obtain().persistEmulatorPath(
+					ConfigurationKeyEnum.HELP_ONLY_MODE_ENABLED_BOOL.name(),
+					Boolean.FALSE.toString());
+			ScheduleService.obtain().persistEmulatorPath(
+					ConfigurationKeyEnum.HELP_ONLY_PROFILE_IDS_STRING.name(),
+					"");
+		}
+
+		syncingHelpOnlyState = true;
+		try {
+			checkboxHelpOnlyMode.setSelected(enabled);
+			applyHelpOnlySelection(selectedProfileIds);
+			listviewHelpOnlyProfiles.setDisable(!enabled);
+		} finally {
+			syncingHelpOnlyState = false;
+		}
+
+		if (isBotRunning()) {
+			checkboxHelpOnlyMode.setDisable(true);
+			listviewHelpOnlyProfiles.setDisable(true);
+		}
+
+		lastValidHelpOnlyEnabled = enabled;
+		lastValidHelpOnlySelection = new HashSet<>(selectedProfileIds);
+
+		checkboxHelpOnlyMode.selectedProperty().addListener((obs, oldValue, newValue) -> {
+			listviewHelpOnlyProfiles.setDisable(!newValue);
+			validateAndPersistHelpOnlyConfiguration(true);
+		});
+	}
+
+	private void validateAndPersistHelpOnlyConfiguration(boolean warnOnEnable) {
+		if (syncingHelpOnlyState) {
+			return;
+		}
+
+		if (isBotRunning()) {
+			displayError("Help Only Mode can only be changed while the bot is stopped.");
+			restoreLastValidHelpOnlySnapshot();
+			return;
+		}
+
+		boolean enabled = checkboxHelpOnlyMode.isSelected();
+		Set<Long> selectedProfileIds = collectSelectedHelpOnlyProfileIds();
+
+		if (enabled) {
+			String validationError = validateHelpOnlySelectionRules(selectedProfileIds, false);
+			if (validationError != null) {
+				displayError(validationError);
+				restoreLastValidHelpOnlySnapshot();
+				return;
+			}
+		}
+
+		ScheduleService.obtain().persistEmulatorPath(
+				ConfigurationKeyEnum.HELP_ONLY_MODE_ENABLED_BOOL.name(),
+				Boolean.toString(enabled));
+		ScheduleService.obtain().persistEmulatorPath(
+				ConfigurationKeyEnum.HELP_ONLY_PROFILE_IDS_STRING.name(),
+				HelpOnlyModeSettings.serializeSelectedProfileIds(selectedProfileIds));
+
+		boolean wasEnabled = lastValidHelpOnlyEnabled;
+		lastValidHelpOnlyEnabled = enabled;
+		lastValidHelpOnlySelection = new HashSet<>(selectedProfileIds);
+
+		if (warnOnEnable && enabled && !wasEnabled) {
+			showHelpOnlyModeWarning();
+		}
+	}
+
+	private void restoreLastValidHelpOnlySnapshot() {
+		syncingHelpOnlyState = true;
+		try {
+			checkboxHelpOnlyMode.setSelected(lastValidHelpOnlyEnabled);
+			applyHelpOnlySelection(lastValidHelpOnlySelection);
+			listviewHelpOnlyProfiles.setDisable(!lastValidHelpOnlyEnabled);
+		} finally {
+			syncingHelpOnlyState = false;
+		}
+	}
+
+	private void applyHelpOnlySelection(Set<Long> profileIds) {
+		Set<Long> safeSelection = profileIds == null ? Set.of() : profileIds;
+		for (HelpOnlyProfileItem item : helpOnlyProfiles) {
+			item.setSelected(safeSelection.contains(item.getProfileId()));
+		}
+	}
+
+	private Set<Long> collectSelectedHelpOnlyProfileIds() {
+		Set<Long> selected = new HashSet<>();
+		for (HelpOnlyProfileItem item : helpOnlyProfiles) {
+			if (item.isSelected()) {
+				selected.add(item.getProfileId());
+			}
+		}
+		return selected;
+	}
+
+	private String validateHelpOnlySelectionRules(Set<Long> selectedProfileIds, boolean requireSelection) {
+		if (selectedProfileIds == null || selectedProfileIds.isEmpty()) {
+			return requireSelection ? "Help Only Mode requires at least one selected profile." : null;
+		}
+
+		int maxConcurrent = resolveMaxConcurrentInstances();
+		if (selectedProfileIds.size() > maxConcurrent) {
+			return "Help Only Mode selection exceeds Max Concurrent Instances (" + maxConcurrent + ").";
+		}
+
+		Map<String, Integer> selectedByEmulator = new HashMap<>();
+		for (HelpOnlyProfileItem item : helpOnlyProfiles) {
+			if (!selectedProfileIds.contains(item.getProfileId())) {
+				continue;
+			}
+			String emuKey = item.getEmulatorNumber() == null || item.getEmulatorNumber().isBlank()
+					? "profile-" + item.getProfileId()
+					: item.getEmulatorNumber();
+			int count = selectedByEmulator.getOrDefault(emuKey, 0) + 1;
+			if (count > 1) {
+				return "Multi-account profiles sharing the same emulator can only select one profile for Help Only Mode.";
+			}
+			selectedByEmulator.put(emuKey, count);
+		}
+
+		return null;
+	}
+
+	private int resolveMaxConcurrentInstances() {
+		try {
+			int parsed = Integer.parseInt(textfieldMaxConcurrentInstances.getText());
+			return Math.max(1, parsed);
+		} catch (NumberFormatException ignored) {
+			return Integer.parseInt(ConfigurationKeyEnum.MAX_RUNNING_EMULATORS_INT.getDefaultValue());
+		}
+	}
+
+	private void showHelpOnlyModeWarning() {
+		Alert warning = new Alert(Alert.AlertType.WARNING);
+		warning.setTitle("Help Only Mode Enabled");
+		warning.setHeaderText("Regular task execution is suspended");
+		warning.setContentText("Attention: selected profiles stop all tasks until Help Only Mode is disabled.");
+		warning.showAndWait();
+	}
+
+	private boolean isBotRunning() {
+		LauncherLayoutController launcher = LauncherLayoutController.getInstance();
+		return launcher != null && launcher.isBotRunning();
+	}
+
+	private int emulatorSortKey(String emulatorNumber) {
+		if (emulatorNumber == null || emulatorNumber.isBlank()) {
+			return Integer.MAX_VALUE;
+		}
+		try {
+			return Integer.parseInt(emulatorNumber.trim());
+		} catch (NumberFormatException ignored) {
+			return Integer.MAX_VALUE;
+		}
 	}
 
 	/* ────────────────────────────────────────────────
@@ -462,14 +685,15 @@ public class EmuConfigLayoutController {
 		Alert warning = new Alert(Alert.AlertType.WARNING);
 		warning.setTitle("Important: Concurrent Instance Requirement");
 		warning.setHeaderText("Close Game Option Selected");
-		warning.setContentText(
-				"You have selected 'Close Game' behavior which keeps emulators running during idle periods.\n\n"
-				+ "IMPORTANT: Make sure you have enough concurrent emulator instances (" + instanceLimit + ") "
-				+ "to handle all your active profiles simultaneously. If you have more profiles than concurrent "
-				+ "instances, some profiles won't be able to run.\n\n"
-				+ "Consider:\n"
-				+ "• Increasing 'Max Concurrent Instances' if needed\n"
-				+ "• Using 'Close Emulator' if you have limited system resources");
+		warning.setContentText(("""
+				You have selected 'Close Game' behavior which keeps emulators running during idle periods.
+
+				IMPORTANT: Make sure you have enough concurrent emulator instances (%d) to handle all your active profiles simultaneously. If you have more profiles than concurrent instances, some profiles won't be able to run.
+
+				Consider:
+				• Increasing 'Max Concurrent Instances' if needed
+				• Using 'Close Emulator' if you have limited system resources
+				""").formatted(instanceLimit));
 		warning.showAndWait();
 	}
 
@@ -479,5 +703,42 @@ public class EmuConfigLayoutController {
 		errorAlert.setHeaderText(null);
 		errorAlert.setContentText(detail);
 		errorAlert.showAndWait();
+	}
+
+	private static final class HelpOnlyProfileItem {
+		private final Long profileId;
+		private final String profileName;
+		private final String emulatorNumber;
+		private final BooleanProperty selected = new SimpleBooleanProperty(false);
+
+		private HelpOnlyProfileItem(Long profileId, String profileName, String emulatorNumber) {
+			this.profileId = profileId;
+			this.profileName = profileName == null ? "Unnamed" : profileName;
+			this.emulatorNumber = emulatorNumber == null ? "-" : emulatorNumber;
+		}
+
+		private Long getProfileId() {
+			return profileId;
+		}
+
+		private String getEmulatorNumber() {
+			return emulatorNumber;
+		}
+
+		private boolean isSelected() {
+			return selected.get();
+		}
+
+		private void setSelected(boolean value) {
+			selected.set(value);
+		}
+
+		private BooleanProperty selectedProperty() {
+			return selected;
+		}
+
+		private String getDisplayLabel() {
+			return profileName + " (Emulator: " + emulatorNumber + ")";
+		}
 	}
 }

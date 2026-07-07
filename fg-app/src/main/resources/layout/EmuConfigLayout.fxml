@@ -89,6 +89,20 @@
                               <Label text="min. Mode:" />
                               <ComboBox fx:id="comboboxAutoStartMode" maxWidth="Infinity" prefWidth="150.0" />
                           </HBox>
+
+                          <!-- Row 5 -->
+                          <HBox alignment="CENTER_LEFT" spacing="10" GridPane.columnIndex="0" GridPane.rowIndex="4">
+                              <CheckBox fx:id="checkboxHelpOnlyMode" text="Help Only Mode" />
+                          </HBox>
+                          <HBox alignment="CENTER_LEFT" spacing="10" GridPane.columnIndex="1" GridPane.rowIndex="4">
+                              <Label text="Applies only to selected profiles" styleClass="description-label" />
+                          </HBox>
+
+                          <!-- Row 6 -->
+                          <VBox spacing="6" GridPane.columnIndex="0" GridPane.rowIndex="5" GridPane.columnSpan="2">
+                              <Label text="Help Only Profiles" />
+                              <ListView fx:id="listviewHelpOnlyProfiles" maxWidth="Infinity" prefHeight="120.0" />
+                          </VBox>
                       </children>
                   </GridPane>
               </VBox>

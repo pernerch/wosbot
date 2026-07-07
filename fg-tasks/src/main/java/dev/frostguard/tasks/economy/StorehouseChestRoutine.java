@@ -83,7 +83,6 @@ public class StorehouseChestRoutine extends DelayedTask {
             .build();
 
     // ========== Configuration (loaded in loadConfiguration()) ==========
-    private String storedStaminaTime;
     private ResilientOcrExecutor<LocalDateTime> textHelper;
 
     // ========== Execution State (reset each execution) ==========
@@ -98,14 +97,9 @@ public class StorehouseChestRoutine extends DelayedTask {
      * Loads task configuration from profile.
      */
     private void loadConfiguration() {
-        // Check if we have a stored stamina claim time
-        String storedStaminaTime = profile.getConfig(
-                ConfigurationKeyEnum.STOREHOUSE_STAMINA_CLAIM_TIME_STRING, String.class);
-        this.storedStaminaTime = storedStaminaTime;
-
         this.textHelper = new ResilientOcrExecutor<>(provider);
 
-        logDebug(String.format("Configuration loaded - Stored stamina time: %s", storedStaminaTime));
+        logDebug("Configuration loaded");
     }
 
     /**
@@ -130,9 +124,8 @@ public class StorehouseChestRoutine extends DelayedTask {
 
         processChestReward();
 
-        if (isTimeToClaimStamina()) {
-            processStaminaReward();
-        }
+        // Always check stamina availability when Storehouse is open.
+        processStaminaReward();
 
         scheduleToNearestTime();
 
@@ -256,33 +249,6 @@ public class StorehouseChestRoutine extends DelayedTask {
     }
 
     /**
-     * Checks if it's time to claim the stamina reward.
-     * Stamina is claimed once per day at game reset.
-     */
-    private boolean isTimeToClaimStamina() {
-
-        if (storedStaminaTime != null && !storedStaminaTime.isEmpty()) {
-            try {
-                LocalDateTime nextClaimTime = LocalDateTime.parse(storedStaminaTime);
-                boolean timeToClaimAgain = LocalDateTime.now().isAfter(nextClaimTime);
-
-                if (!timeToClaimAgain) {
-                    logDebug("Stamina already claimed. Next claim at: " + nextClaimTime.format(DATETIME_FORMATTER));
-                }
-
-                nextStaminaTime = nextClaimTime;
-
-                return timeToClaimAgain;
-            } catch (Exception e) {
-                logWarning("Failed to parse stored stamina claim time: " + e.getMessage());
-            }
-        }
-
-        // First run or invalid stored time - allow claiming
-        return true;
-    }
-
-    /**
      * Processes the stamina reward.
      * Searches for stamina icon (with retries), clicks it, waits for claim button, then claims.
      */
@@ -308,8 +274,14 @@ public class StorehouseChestRoutine extends DelayedTask {
                 nextStaminaTime = GameTimeUtils.nextCycleReset();
             }
         } else {
-            logWarning("Stamina icon not found after retries. Will retry in 1 hour as fallback.");
-            nextStaminaTime = LocalDateTime.now().plusHours(1);
+            LocalDateTime now = LocalDateTime.now();
+            if (nextChestTime != null && nextChestTime.isAfter(now)) {
+                logWarning("Stamina icon not found after retries. Coupling retry to next chest timer.");
+                nextStaminaTime = nextChestTime;
+            } else {
+                logWarning("Stamina icon not found after retries. Chest timer unavailable; retrying in 1 hour fallback.");
+                nextStaminaTime = now.plusHours(1);
+            }
         }
 
         // Store the next claim time

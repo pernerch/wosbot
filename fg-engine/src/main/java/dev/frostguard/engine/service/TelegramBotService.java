@@ -10,6 +10,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Comparator;
+import java.util.Set;
+import java.util.HashSet;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -292,7 +295,7 @@ public class TelegramBotService implements BotStateListener {
                 + "`/screenshot`  — Capture & send emulator screen\n"
                 + "`/queue`       — Task queue (schedule / remove / run)\n"
                 + "`/stats`       — Bot activity statistics per profile\n"
-                + "`/logs`        — Download log files (bot.log / CleanBot.log)\n"
+                + "`/logs`        — Download available runtime log files\n"
                 + "`/profiles`    — View & toggle profiles on/off\n"
                 + "\n"
                 + "❓ *Help*\n"
@@ -745,7 +748,18 @@ public class TelegramBotService implements BotStateListener {
         List<TaskEntry> list = new ArrayList<>();
         for (TpDailyTaskEnum task : TpDailyTaskEnum.values()) {
             TaskStateData state = TaskManagementService.shared().lookupTaskState(profileId, task.getId());
-            boolean scheduled = (queue != null) && queue.isTaskQueued(task);
+            boolean scheduled = false;
+            if (queue != null) {
+                try {
+                    scheduled = queue.isTaskQueued(task);
+                } catch (IllegalArgumentException ex) {
+                    // Some logical enum values (e.g., CUSTOM_TASK) are placeholders and
+                    // don't have a direct DelayedTaskRegistry mapping.
+                    scheduled = false;
+                    logger.debug("Skipping direct queue mapping for task {} ({}): {}",
+                            task.getName(), task.getId(), ex.getMessage());
+                }
+            }
             boolean executing = (state != null) && state.isExecuting();
             list.add(new TaskEntry(task, state, scheduled, executing));
         }
@@ -846,13 +860,31 @@ public class TelegramBotService implements BotStateListener {
                         answerCallbackQuery(callbackId, "");
                         return;
                     }
-                    answerCallbackQuery(callbackId, "📥 Downloading...");
+                    answerCallbackQuery(callbackId, "");
+
+                    // Backward-compat fallback for old callback payloads.
                     String type = parts[1];
-                    String path = "log/bot.log";
+                    String path = "log/frostguard.log";
                     if ("clean".equals(type)) {
                         path = "log/CleanBot.log";
+                    } else if ("bot".equals(type)) {
+                        path = "log/frostguard.log";
                     }
                     sendDocument(chatId, path);
+                }
+                case "log_dl_idx" -> {
+                    if (parts.length < 2) {
+                        answerCallbackQuery(callbackId, "");
+                        return;
+                    }
+                    int index = Integer.parseInt(parts[1]);
+                    List<LogFileOption> options = discoverAvailableLogFiles();
+                    if (index < 0 || index >= options.size()) {
+                        answerCallbackQuery(callbackId, "❌ Log file not available anymore");
+                        return;
+                    }
+                    answerCallbackQuery(callbackId, "📥 Downloading...");
+                    sendDocument(chatId, options.get(index).path().toString());
                 }
                 default -> answerCallbackQuery(callbackId, "");
             }
@@ -1192,21 +1224,149 @@ public class TelegramBotService implements BotStateListener {
     }
 
     private void handleLogsCommand(long chatId) {
+        List<LogFileOption> options = discoverAvailableLogFiles();
+        if (options.isEmpty()) {
+            sendMessage(chatId, "❌ No log files found.");
+            return;
+        }
+
         String text = "📄 *Log Center*\n"
                 + "━━━━━━━━━━━━━━━━━━━━━━\n"
                 + "Select a log file to download:";
 
         ArrayNode kb = objectMapper.createArrayNode();
-        ArrayNode row = objectMapper.createArrayNode();
-
-        row.add(objectMapper.createObjectNode().put("text", "📄 bot.log").put("callback_data", "log_dl:bot"));
-        row.add(objectMapper.createObjectNode().put("text", "🧹 CleanBot.log").put("callback_data", "log_dl:clean"));
-        kb.add(row);
+        for (int i = 0; i < options.size(); i++) {
+            LogFileOption option = options.get(i);
+            ArrayNode row = objectMapper.createArrayNode();
+            row.add(objectMapper.createObjectNode()
+                    .put("text", option.label())
+                    .put("callback_data", "log_dl_idx:" + i));
+            kb.add(row);
+        }
 
         ObjectNode markup = objectMapper.createObjectNode();
         markup.set("inline_keyboard", kb);
 
         sendOrEditMessage(chatId, -1L, text, markup, "MarkdownV2");
+    }
+
+    private List<LogFileOption> discoverAvailableLogFiles() {
+        List<LogFileOption> options = new ArrayList<>();
+        List<LogFileOption> runningAccountLogs = new ArrayList<>();
+        List<LogFileOption> otherAccountLogs = new ArrayList<>();
+
+        Set<Long> runningProfileIds = new HashSet<>();
+        try {
+            ScheduleService.obtain().getCoordinator().getActiveQueueStates().stream()
+                    .filter(state -> state != null && state.getProfileId() != null && !state.isPaused())
+                    .forEach(state -> runningProfileIds.add(state.getProfileId()));
+        } catch (Exception ex) {
+            logger.debug("Could not resolve running profile queue states for log sorting: {}", ex.getMessage());
+        }
+
+        List<AccountDescriptor> allProfiles = ProfileService.obtain().fetchAllAccounts();
+        List<AccountDescriptor> runningProfiles = (allProfiles == null)
+                ? List.of()
+                : allProfiles.stream()
+                        .filter(profile -> profile != null && profile.getId() != null && runningProfileIds.contains(profile.getId()))
+                        .toList();
+
+        Path logsDir = Paths.get("logs");
+        if (Files.isDirectory(logsDir)) {
+            try (var stream = Files.list(logsDir)) {
+                stream
+                        .filter(Files::isRegularFile)
+                        .filter(path -> path.getFileName().toString().toLowerCase().startsWith("account_"))
+                        .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".log"))
+                        .sorted(Comparator.comparing(path -> path.getFileName().toString(), String.CASE_INSENSITIVE_ORDER))
+                        .forEach(path -> {
+                            LogFileOption option = new LogFileOption(path, "👤 " + path.getFileName());
+                            if (isRunningProfileLog(path.getFileName().toString(), runningProfiles)) {
+                                runningAccountLogs.add(option);
+                            } else {
+                                otherAccountLogs.add(option);
+                            }
+                        });
+            } catch (IOException ex) {
+                logger.warn("Could not read logs directory: {}", ex.getMessage());
+            }
+        }
+
+        options.addAll(runningAccountLogs);
+
+        Path rootLog = Paths.get("log", "frostguard.log");
+        if (Files.exists(rootLog)) {
+            options.add(new LogFileOption(rootLog, "📄 frostguard.log"));
+        }
+
+        options.addAll(otherAccountLogs);
+
+        Path legacyBot = Paths.get("log", "bot.log");
+        if (Files.exists(legacyBot)) {
+            options.add(new LogFileOption(legacyBot, "📄 bot.log"));
+        }
+
+        Path legacyClean = Paths.get("log", "CleanBot.log");
+        if (Files.exists(legacyClean)) {
+            options.add(new LogFileOption(legacyClean, "🧹 CleanBot.log"));
+        }
+
+        return options;
+    }
+
+    private boolean isRunningProfileLog(String fileName, List<AccountDescriptor> runningProfiles) {
+        if (fileName == null || runningProfiles == null || runningProfiles.isEmpty()) {
+            return false;
+        }
+
+        String normalizedFile = fileName.toLowerCase();
+        for (AccountDescriptor profile : runningProfiles) {
+            if (profile == null || profile.getName() == null) {
+                continue;
+            }
+
+            String normalizedName = normalizeForAccountLog(profile.getName());
+            String emu = profile.getEmulatorNumber() == null ? "" : profile.getEmulatorNumber().trim();
+
+            if (normalizedName.isEmpty()) {
+                continue;
+            }
+
+            String prefix = "account_" + normalizedName + "_";
+            if (!normalizedFile.startsWith(prefix)) {
+                continue;
+            }
+
+            if (!emu.isEmpty()) {
+                String suffix = "_" + emu.toLowerCase() + ".log";
+                if (normalizedFile.endsWith(suffix)) {
+                    return true;
+                }
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private String normalizeForAccountLog(String profileName) {
+        if (profileName == null) {
+            return "";
+        }
+        String normalized = profileName.toLowerCase().replaceAll("[^a-z0-9]+", "_");
+        normalized = normalized.replaceAll("_+", "_");
+        if (normalized.startsWith("_")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.endsWith("_")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    private record LogFileOption(Path path, String label) {
     }
 
     private void sendDocument(long chatId, String filePath) {

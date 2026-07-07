@@ -381,17 +381,27 @@ public class GatherRoutine extends DelayedTask {
 
     private List<GatherType> scanActiveMarches() {
         List<GatherType> active = new ArrayList<>();
-        if (enabledTypes == null || enabledTypes.isEmpty() || rotationPool == null) {
+        if (enabledTypes == null || enabledTypes.isEmpty()) {
             return active;
         }
 
-        // Changed by pernerch | Date: 2026-07-02 | Why: the persisted rotation pool remains the
-        // stable source of fairness state; the wilderness march list is no longer used to locate
-        // resource shortcut templates that do not exist there.
-        for (GatherType type : enabledTypes) {
-            if (!rotationPool.contains(type)) {
-                active.add(type);
+        // Detect gather types directly from currently active march rows, so free slots
+        // can be assigned to the remaining resource types not yet outside.
+        navigationHelper.ensureCorrectScreenLocation(LaunchPoint.WORLD);
+        sleepTask(250);
+        marchHelper.openLeftMenuCitySection(false);
+        try {
+            for (GatherType type : enabledTypes) {
+                if (!checkActiveMarches(type).isEmpty()) {
+                    active.add(type);
+                }
             }
+        } finally {
+            marchHelper.closeLeftMenu();
+        }
+
+        if (!active.isEmpty()) {
+            logInfo("Detected active gather resource types: " + active);
         }
 
         return active;

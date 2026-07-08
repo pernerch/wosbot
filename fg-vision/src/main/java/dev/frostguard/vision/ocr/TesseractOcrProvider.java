@@ -2,10 +2,7 @@ package dev.frostguard.vision.ocr;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -14,8 +11,10 @@ import java.util.List;
 
 import javax.imageio.ImageIO;
 
-import dev.frostguard.api.domain.RawImageData;
+import dev.frostguard.api.configs.OcrDebugImageWriter;
+import dev.frostguard.api.configs.OcrDebugSettings;
 import dev.frostguard.api.domain.PointData;
+import dev.frostguard.api.domain.RawImageData;
 import dev.frostguard.api.domain.TesseractSettingsData;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
@@ -24,11 +23,11 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Provides text recognition from captured device screens or local image
- * files.  Handles sub-region extraction, upscaling, optional background
+ * files. Handles sub-region extraction, upscaling, optional background
  * removal, and Tesseract engine configuration.
  *
- * <p>All public entry points are thread-safe.  The tessdata directory is
- * located once and then cached for the lifetime of the JVM.
+ * <p>All public entry points are thread-safe. The tessdata directory is
+ * located once and then cached for the lifetime of the JVM.</p>
  */
 public final class TesseractOcrProvider {
 
@@ -43,20 +42,13 @@ public final class TesseractOcrProvider {
     /** Lazily resolved, then reused for every subsequent call. */
     private static volatile String resolvedTessdataDir;
 
+    private TesseractOcrProvider() {
+    }
+
     // =====================================================================
     //  Public entry points
     // =====================================================================
 
-    /**
-     * Recognises text inside the rectangle described by two corners,
-     * using the specified Tesseract language pack.
-     *
-     * @param capture  device screen snapshot
-     * @param corner1  one corner of the target rectangle
-     * @param corner2  opposite corner
-     * @param lang     Tesseract language code (e.g. {@code "eng"})
-     * @return trimmed text, never {@code null}
-     */
     public static String recognizeText(RawImageData capture, PointData corner1,
                                        PointData corner2, String lang)
             throws TesseractException {
@@ -68,16 +60,6 @@ public final class TesseractOcrProvider {
         return executeRecognition(configureTesseract(lang), prepared);
     }
 
-    /**
-     * Recognises text inside the rectangle described by two corners,
-     * driven by a full {@link TesseractSettingsData}.
-     *
-     * @param capture  device screen snapshot
-     * @param corner1  one corner of the target rectangle
-     * @param corner2  opposite corner
-     * @param cfg      Tesseract tuning parameters
-     * @return trimmed text, never {@code null}
-     */
     public static String recognizeText(RawImageData capture, PointData corner1,
                                        PointData corner2, TesseractSettingsData cfg)
             throws TesseractException {
@@ -105,7 +87,7 @@ public final class TesseractOcrProvider {
         String recognised = executeRecognition(engine, prepared);
         log.debug("Engine execution: {} ms", System.currentTimeMillis() - step);
 
-        if (cfg.isDebug()) {
+        if (cfg.isDebug() && OcrDebugSettings.isEnabled()) {
             exportDiagnosticImage(capture, prepared, cx, cy, cw, ch, cfg, recognised);
         }
 
@@ -114,17 +96,6 @@ public final class TesseractOcrProvider {
         return recognised;
     }
 
-    /**
-     * Reads text from a region of a local image file on disk.
-     *
-     * @param file    source image (PNG, JPEG, etc.)
-     * @param x       left edge of the region
-     * @param y       top edge
-     * @param w       width
-     * @param h       height
-     * @param lang    Tesseract language code
-     * @return trimmed text, never {@code null}
-     */
     public static String readFromFile(File file, int x, int y, int w, int h, String lang)
             throws Exception {
         BufferedImage full = ImageIO.read(file);
@@ -141,11 +112,6 @@ public final class TesseractOcrProvider {
         return executeRecognition(configureTesseract(lang), magnified);
     }
 
-    /**
-     * Converts a full {@link RawImageData} to a standard
-     * {@link BufferedImage}.  Useful for diagnostic dumps only — not
-     * invoked on the hot path.
-     */
     public static BufferedImage toBufferedImage(RawImageData capture) {
         int w = capture.getWidth();
         int h = capture.getHeight();
@@ -168,7 +134,6 @@ public final class TesseractOcrProvider {
     //  Tesseract factory
     // =====================================================================
 
-    /** Builds a single-line LSTM engine for the given language. */
     private static Tesseract configureTesseract(String lang) {
         Tesseract t = new Tesseract();
         t.setDatapath(locateTessdata());
@@ -179,7 +144,6 @@ public final class TesseractOcrProvider {
         return t;
     }
 
-    /** Builds an engine whose behaviour is controlled by {@code cfg}. */
     private static Tesseract configureTesseract(TesseractSettingsData cfg) {
         Tesseract t = new Tesseract();
         t.setDatapath(locateTessdata());
@@ -190,7 +154,6 @@ public final class TesseractOcrProvider {
         return t;
     }
 
-    /** Runs the engine and strips whitespace / line breaks. */
     private static String executeRecognition(Tesseract engine, BufferedImage img)
             throws TesseractException {
         return engine.doOCR(img).replace("\n", "").replace("\r", "").trim();
@@ -200,11 +163,6 @@ public final class TesseractOcrProvider {
     //  Tessdata resolution
     // =====================================================================
 
-    /**
-     * Walks upward from the working directory looking for a
-     * {@code lib/tesseract} or {@code tools/tesseract} folder that
-     * contains at least one {@code .traineddata} file.
-     */
     private static String locateTessdata() {
         if (resolvedTessdataDir != null) return resolvedTessdataDir;
         synchronized (TesseractOcrProvider.class) {
@@ -242,10 +200,6 @@ public final class TesseractOcrProvider {
     //  Pixel decoding
     // =====================================================================
 
-    /**
-     * Reads one pixel from the raw byte buffer and returns packed
-     * {@code 0x00RRGGBB}.  Handles both 16-bit RGB565 and 32-bit RGBA.
-     */
     private static int decodePixel(byte[] data, int bpp, int stride, int px, int py) {
         if (bpp == 16) {
             int off = (py * stride + px) * 2;
@@ -255,7 +209,6 @@ public final class TesseractOcrProvider {
             int b = (packed & 0x1F) << 3;
             return (r << 16) | (g << 8) | b;
         }
-        // 32 bpp RGBA
         int off = (py * stride + px) * 4;
         int r = data[off]     & 0xFF;
         int g = data[off + 1] & 0xFF;
@@ -267,18 +220,6 @@ public final class TesseractOcrProvider {
     //  Image processing
     // =====================================================================
 
-    /**
-     * Extracts a rectangular region and magnifies it for OCR. When isolating
-     * text ({@code stripBackground} + {@code textColour}), the region is turned
-     * into a <em>soft</em> distance-to-target grayscale (anti-aliased) rather
-     * than a hard black/white mask, then upscaled <em>bilinearly</em>.
-     *
-     * <p>The previous approach — hard per-pixel binarisation blown up by
-     * nearest-neighbour — produced blocky, stair-stepped glyph edges that made
-     * the LSTM flip borderline digits on clean input (verified: 2->7, 5->3).
-     * A smooth grayscale keeps the "background removed" benefit while giving
-     * Tesseract the anti-aliased edges its model was trained on.
-     */
     private static BufferedImage cropAndPreprocess(RawImageData capture,
             int cx, int cy, int cw, int ch, int scale,
             boolean stripBackground, Color textColour) {
@@ -289,14 +230,12 @@ public final class TesseractOcrProvider {
         boolean isolate = stripBackground && textColour != null;
 
         int tR = 0, tG = 0, tB = 0;
-        if (isolate) {
+        if (isolate && textColour != null) {
             tR = textColour.getRed();
             tG = textColour.getGreen();
             tB = textColour.getBlue();
         }
 
-        // Native-resolution intermediate: soft grayscale when isolating text
-        // (0 = exact text colour -> dark, >= tolerance -> light), else raw colour.
         int[] px = new int[cw * ch];
         for (int y = 0; y < ch; y++) {
             for (int x = 0; x < cw; x++) {
@@ -314,7 +253,6 @@ public final class TesseractOcrProvider {
         BufferedImage base = new BufferedImage(cw, ch, BufferedImage.TYPE_INT_RGB);
         base.setRGB(0, 0, cw, ch, px, 0, cw);
 
-        // Smooth (bilinear) upscale — replaces the old nearest-neighbour blow-up.
         int outW = cw * scale, outH = ch * scale;
         BufferedImage result = new BufferedImage(outW, outH, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = result.createGraphics();
@@ -324,7 +262,6 @@ public final class TesseractOcrProvider {
         return result;
     }
 
-    /** Bilinear upscale via {@link Graphics2D} — used for file-based path. */
     private static BufferedImage enlargeViaGraphics(BufferedImage src, int factor) {
         int w = src.getWidth()  * factor;
         int h = src.getHeight() * factor;
@@ -345,9 +282,6 @@ public final class TesseractOcrProvider {
         }
     }
 
-    /**
-     * Converts two corners into a clamped {@code [x, y, w, h]} clip rect.
-     */
     private static int[] computeClipRect(PointData c1, PointData c2, RawImageData capture) {
         int x = (int) Math.min(c1.getX(), c2.getX());
         int y = (int) Math.min(c1.getY(), c2.getY());
@@ -363,42 +297,37 @@ public final class TesseractOcrProvider {
     //  Debug / diagnostic output
     // =====================================================================
 
-    /**
-     * Writes a side-by-side diagnostic PNG to {@code <cwd>/temp/}.
-     */
     private static void exportDiagnosticImage(RawImageData capture, BufferedImage processed,
             int cx, int cy, int cw, int ch,
             TesseractSettingsData cfg, String text) {
-        long t0 = System.currentTimeMillis();
-        try {
-            Path tempDir = Paths.get(System.getProperty("user.dir")).resolve("temp");
-            Files.createDirectories(tempDir);
+        String summary = formatSettingsSummary(cfg, text);
+        BufferedImage full = toBufferedImage(capture);
+        BufferedImage composite = composeDiagnosticPanel(
+                full, processed, cx, cy, cw, ch, summary, text);
 
-            String summary = formatSettingsSummary(cfg, text);
-            BufferedImage full = toBufferedImage(capture);
-            BufferedImage composite = composeDiagnosticPanel(
-                    full, processed, cx, cy, cw, ch, summary, text);
-
-            ByteArrayOutputStream buf = new ByteArrayOutputStream();
-            ImageIO.write(composite, "png", buf);
-            Files.write(tempDir.resolve(System.currentTimeMillis() + "_debug.png"), buf.toByteArray());
-
-            log.debug("Diagnostic image saved: {} ms", System.currentTimeMillis() - t0);
-        } catch (IOException ex) {
-            log.error("Diagnostic image export failed: {}", ex.getMessage());
-        }
+        OcrDebugImageWriter.saveDebugImage(composite, "ocr-diagnostic", System.currentTimeMillis(), 1);
     }
 
     private static String formatSettingsSummary(TesseractSettingsData cfg, String text) {
-        return "Engine Settings:"
-                + "\n  Language: eng"
-                + "\n  Seg Mode: " + (cfg.hasPageSegMode() ? cfg.getPageSegMode() : "Default")
-                + "\n  Engine Mode: " + (cfg.hasOcrEngineMode() ? cfg.getOcrEngineMode() : "Default")
-                + "\n  Whitelist: " + (cfg.hasAllowedChars() ? cfg.getAllowedChars() : "All")
-                + "\n  Strip BG: " + cfg.isRemoveBackground()
-                + "\n  Text Colour: " + (cfg.getTextColor() != null ? cfg.getTextColor() : "Auto")
-                + "\n  Magnification: " + MAGNIFICATION + "x"
-                + "\n\nRecognised: \"" + text + "\"";
+        return """
+                Engine Settings:
+                  Language: eng
+                  Seg Mode: %s
+                  Engine Mode: %s
+                  Whitelist: %s
+                  Strip BG: %s
+                  Text Colour: %s
+                  Magnification: %sx
+
+                Recognised: "%s"
+                """.formatted(
+                cfg.hasPageSegMode() ? cfg.getPageSegMode() : "Default",
+                cfg.hasOcrEngineMode() ? cfg.getOcrEngineMode() : "Default",
+                cfg.hasAllowedChars() ? cfg.getAllowedChars() : "All",
+                cfg.isRemoveBackground(),
+                cfg.getTextColor() != null ? cfg.getTextColor() : "Auto",
+                MAGNIFICATION,
+                text);
     }
 
     private static BufferedImage composeDiagnosticPanel(BufferedImage full, BufferedImage processed,
@@ -418,13 +347,11 @@ public final class TesseractOcrProvider {
         g.setColor(Color.WHITE);
         g.fillRect(0, 0, totalW, totalH);
 
-        // Left panel — full image with annotation
         g.setColor(Color.BLACK);
         g.setFont(new Font("Arial", Font.BOLD, 16));
         g.drawString("Full Image with Region", 10, 20);
         g.drawImage(annotateWithRegion(full, cx, cy, cw, ch, detectedText), 0, HEADER, null);
 
-        // Right panel — processed crop + info
         int rx = full.getWidth() + GAP;
         g.drawString("Processed Region", rx + 10, 20);
         g.drawImage(processed, rx, HEADER, null);

@@ -248,6 +248,8 @@ public enum ConfigurationKeyEnum {
     AUTO_START_ENABLED_BOOL             ("false",       Boolean.class,  ConfigCategory.SYSTEM),
     AUTO_START_MODE_STRING              ("Continuous",  String.class,   ConfigCategory.SYSTEM),
     BOT_STARTUP_SCREEN_STRING           ("CONTROL_LOGS", String.class,  ConfigCategory.SYSTEM),
+    OCR_DEBUG_IMAGES_ENABLED_BOOL       ("false",       Boolean.class,  ConfigCategory.SYSTEM),
+    OCR_DEBUG_IMAGES_PATH_STRING        ("Botpfad/OCRImages", String.class, ConfigCategory.SYSTEM),
     BOOL_DEBUG                          ("false",       Boolean.class,  ConfigCategory.SYSTEM),
     CURRENT_EMULATOR_STRING             ("",            String.class,   ConfigCategory.SYSTEM),
     DISCORD_TOKEN_STRING                ("",            String.class,   ConfigCategory.SYSTEM),
@@ -519,7 +521,6 @@ public enum ConfigurationKeyEnum {
      * @param fallback the value returned on conversion failure
      * @return the converted value, or fallback
      */
-    @SuppressWarnings("unchecked")
     public <T> T safelyCast(String raw, T fallback) {
         try {
             return castValue(raw);

@@ -37,7 +37,9 @@ import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.control.cell.CheckBoxListCell;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
+import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
+import javafx.stage.Window;
 import javafx.util.StringConverter;
 
 /**
@@ -77,6 +79,15 @@ public class EmuConfigLayoutController {
 
 	@FXML
 	private ComboBox<BotStartupScreenEnum> comboboxStartupScreen;
+
+	@FXML
+	private CheckBox checkboxOcrDebugImages;
+
+	@FXML
+	private TextField textfieldOcrDebugPath;
+
+	@FXML
+	private Button buttonOcrDebugBrowse;
 
 	@FXML
 	private ComboBox<IdleBehaviorEnum> comboboxInactivityPolicy;
@@ -138,6 +149,7 @@ public class EmuConfigLayoutController {
 		attachPersistenceListeners();
 		configureGameAndIdleDropdowns(globalConfig);
 		configureBotSettings(globalConfig);
+		configureOcrDebugSettings(globalConfig);
 		configureStopBehaviorDropdowns(globalConfig);
 		configureAutoStartSection(globalConfig);
 		configureHelpOnlySection(globalConfig);
@@ -564,6 +576,79 @@ public class EmuConfigLayoutController {
 						selected.name());
 			}
 		});
+	}
+
+	private void configureOcrDebugSettings(Map<String, String> cfg) {
+		boolean debugEnabled = Boolean.parseBoolean(cfg.getOrDefault(
+				ConfigurationKeyEnum.OCR_DEBUG_IMAGES_ENABLED_BOOL.name(),
+				ConfigurationKeyEnum.OCR_DEBUG_IMAGES_ENABLED_BOOL.getDefaultValue()));
+		checkboxOcrDebugImages.setSelected(debugEnabled);
+
+		String debugPath = cfg.getOrDefault(
+				ConfigurationKeyEnum.OCR_DEBUG_IMAGES_PATH_STRING.name(),
+				ConfigurationKeyEnum.OCR_DEBUG_IMAGES_PATH_STRING.getDefaultValue());
+		textfieldOcrDebugPath.setText(debugPath);
+		textfieldOcrDebugPath.setDisable(!debugEnabled);
+		buttonOcrDebugBrowse.setDisable(!debugEnabled);
+
+		checkboxOcrDebugImages.selectedProperty().addListener((obs, oldValue, newValue) -> {
+			textfieldOcrDebugPath.setDisable(!newValue);
+			buttonOcrDebugBrowse.setDisable(!newValue);
+			ConfigService.obtain().writeGlobalSetting(
+					ConfigurationKeyEnum.OCR_DEBUG_IMAGES_ENABLED_BOOL,
+					String.valueOf(newValue));
+		});
+
+		textfieldOcrDebugPath.focusedProperty().addListener((obs, oldValue, hasFocus) -> {
+			if (!hasFocus) {
+				persistOcrDebugPath(textfieldOcrDebugPath.getText());
+			}
+		});
+
+		buttonOcrDebugBrowse.setOnAction(evt -> chooseOcrDebugDirectory());
+	}
+
+	private void chooseOcrDebugDirectory() {
+		DirectoryChooser chooser = new DirectoryChooser();
+		chooser.setTitle("Select OCR Debug Folder");
+		File initialDir = resolveInitialOcrDebugDirectory();
+		if (initialDir != null && initialDir.isDirectory()) {
+			chooser.setInitialDirectory(initialDir);
+		}
+
+		Window owner = buttonOcrDebugBrowse.getScene() == null ? null : buttonOcrDebugBrowse.getScene().getWindow();
+		File picked = chooser.showDialog(owner);
+		if (picked == null) {
+			return;
+		}
+
+		textfieldOcrDebugPath.setText(picked.getAbsolutePath());
+		persistOcrDebugPath(picked.getAbsolutePath());
+	}
+
+	private File resolveInitialOcrDebugDirectory() {
+		String raw = textfieldOcrDebugPath.getText();
+		if (raw != null && !raw.isBlank()) {
+			File current = new File(raw.trim());
+			if (current.isDirectory()) {
+				return current;
+			}
+			File parent = current.getParentFile();
+			if (parent != null && parent.isDirectory()) {
+				return parent;
+			}
+		}
+		return new File(System.getProperty("user.dir"));
+	}
+
+	private void persistOcrDebugPath(String rawPath) {
+		String path = rawPath == null || rawPath.isBlank()
+				? ConfigurationKeyEnum.OCR_DEBUG_IMAGES_PATH_STRING.getDefaultValue()
+				: rawPath.trim();
+		textfieldOcrDebugPath.setText(path);
+		ConfigService.obtain().writeGlobalSetting(
+				ConfigurationKeyEnum.OCR_DEBUG_IMAGES_PATH_STRING,
+				path);
 	}
 
 	private void configureStopBehaviorDropdowns(Map<String, String> cfg) {

@@ -1,15 +1,11 @@
 package dev.frostguard.tasks.dailies;
 
 import java.awt.image.BufferedImage;
-import java.io.File;
-import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.imageio.ImageIO;
 
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
@@ -19,6 +15,7 @@ import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.RawImageData;
 import dev.frostguard.api.domain.TesseractSettingsData;
+import dev.frostguard.api.configs.OcrDebugImageWriter;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
@@ -62,7 +59,6 @@ public enum ChiefOrderType {
 private static final int ERROR_RETRY_MINUTES_VALUE = 10;
 private static final int COOLDOWN_RETRY_BUFFER_SECONDS = 10;
 private static final long ORDER_SCREEN_OPEN_WAIT_MS = 1800L;
-private static final String OCR_DEBUG_FOLDER_NAME = "frostguard-ocr";
 private static final AreaData CHIEF_ORDER_SCREEN_AREA = new AreaData(
 	new PointData(407, 208),
 	new PointData(587, 428));
@@ -230,9 +226,10 @@ private boolean scheduleFromCooldownStatusIfPresent() {
 
 private Duration readCooldownDurationFromStatusArea() {
 		String timerText = null;
+		long debugEventTimestamp = System.currentTimeMillis();
 		for (int attempt = 0; attempt < 3; attempt++) {
 			try {
-				dumpCooldownOcrRegionImage(attempt + 1);
+				dumpCooldownOcrRegionImage(attempt + 1, debugEventTimestamp);
 				String rawText = (String) emuManager.getClass()
 						.getMethod("readText", String.class, PointData.class, PointData.class, TesseractSettingsData.class)
 						.invoke(emuManager, EMULATOR_NUMBER, COOLDOWN_STATUS_TOP_LEFT,
@@ -325,7 +322,7 @@ private String extractCooldownTimerToken(String rawText) {
 		return matcher.group(1);
 	}
 
-private void dumpCooldownOcrRegionImage(int attemptNumber) {
+private void dumpCooldownOcrRegionImage(int attemptNumber, long eventTimestamp) {
 		try {
 			RawImageData capture = emuManager.captureScreen(EMULATOR_NUMBER);
 			if (capture == null || capture.getData() == null || capture.getData().length == 0) {
@@ -351,22 +348,12 @@ private void dumpCooldownOcrRegionImage(int attemptNumber) {
 			}
 
 			BufferedImage crop = fullImage.getSubimage(left, top, right - left, bottom - top);
-
-			File debugDir = new File(System.getProperty("java.io.tmpdir"), OCR_DEBUG_FOLDER_NAME);
-			if (!debugDir.exists() && !debugDir.mkdirs()) {
-				logWarning(routineLogChiefOrderLine("Cooldown OCR snapshot skipped: unable to create temp directory " + debugDir.getAbsolutePath()));
-				return;
-			}
-
-			String fileName = "chief-order-cooldown-" + profile.getName().replaceAll("[^a-zA-Z0-9._-]", "_")
-					+ "-attempt-" + attemptNumber + "-" + System.currentTimeMillis() + ".png";
-			File outFile = new File(debugDir, fileName);
-			ImageIO.write(crop, "png", outFile);
-			logInfo(routineLogChiefOrderLine("Cooldown OCR snapshot saved: " + outFile.getAbsolutePath()));
-		} catch (IOException ex) {
-			logWarning(routineLogChiefOrderLine("Cooldown OCR snapshot failed: " + ex.getMessage()));
+			OcrDebugImageWriter.saveDebugImage(crop,
+					"chief-order-cooldown-" + profile.getName().replaceAll("[^a-zA-Z0-9._-]", "_"),
+					eventTimestamp,
+					attemptNumber);
 		} catch (Exception ex) {
-			logWarning(routineLogChiefOrderLine("Cooldown OCR snapshot failed unexpectedly: " + ex.getMessage()));
+			logWarning(routineLogChiefOrderLine("Cooldown OCR snapshot failed: " + ex.getMessage()));
 		}
 	}
 

@@ -266,6 +266,9 @@ public enum ConfigurationKeyEnum {
     LDPLAYER_PATH_STRING                ("",            String.class,   ConfigCategory.SYSTEM),
     MAX_IDLE_TIME_INT                   ("15",          Integer.class,  ConfigCategory.SYSTEM),
     MAX_RUNNING_EMULATORS_INT           ("1",           Integer.class,  ConfigCategory.SYSTEM),
+    // Added by Shederator | Why: serialize concurrent emulator boots to avoid host freezes when
+    // launching 3+ instances at once. Delay (ms) enforced between consecutive emulator launches.
+    EMULATOR_LAUNCH_DELAY_MS_INT        ("30000",       Integer.class,  ConfigCategory.SYSTEM),
     MEMU_PATH_STRING                    ("",            String.class,   ConfigCategory.SYSTEM),
     MUMU_PATH_STRING                    ("C:\\Program Files\\Netease\\MuMuPlayer\\nx_main", String.class, ConfigCategory.SYSTEM),
     PROFILE_SWITCH_COOLDOWN_MS_INT      ("10000",       Integer.class,  ConfigCategory.SYSTEM),

@@ -4,19 +4,18 @@ import dev.frostguard.api.domain.PointData;
 
 public final class RallyFlagCoordinates {
 
+    // Measured tile centres of the formation screen's flag strip. The tiles sit 74.3px apart, not the
+    // 70px this table used to assume, so the old values drifted up to 22px left by slot 8. Taps
+    // survived that because a tile is ~74px wide, but anything needing real precision - such as
+    // matching the padlock of a locked slot - did not.
+    private static final int[] SLOT_CENTRE_X = { 62, 136, 210, 285, 359, 433, 507, 582 };
+    private static final int SLOT_CENTRE_Y = 120;
+
     private RallyFlagCoordinates() {
     }
 
     public static PointData pointForFlag(int flagNumber) {
-        return switch (flagNumber) {
-            case 2 -> new PointData(140, 120);
-            case 3 -> new PointData(210, 120);
-            case 4 -> new PointData(280, 120);
-            case 5 -> new PointData(350, 120);
-            case 6 -> new PointData(420, 120);
-            case 7 -> new PointData(490, 120);
-            case 8 -> new PointData(560, 120);
-            default -> new PointData(70, 120);
-        };
+        int index = (flagNumber >= 1 && flagNumber <= SLOT_CENTRE_X.length) ? flagNumber - 1 : 0;
+        return new PointData(SLOT_CENTRE_X[index], SLOT_CENTRE_Y);
     }
 }

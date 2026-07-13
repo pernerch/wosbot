@@ -1,29 +1,35 @@
 package dev.frostguard.engine.helper;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.api.domain.AreaData;
 import dev.frostguard.api.domain.ImageSearchResultData;
+import dev.frostguard.api.domain.MarchSlotState;
+import dev.frostguard.api.domain.MarchSlotStatus;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.engine.emulator.EmulatorController;
+import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.nav.CommonGameAreas;
 import dev.frostguard.engine.nav.CommonOCRSettings;
 import dev.frostguard.engine.nav.RallyFlagCoordinates;
-import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.vision.logging.ProfileContextLogger;
 import dev.frostguard.vision.ocr.ResilientOcrExecutor;
-import dev.frostguard.vision.ocr.TesseractOcrProvider;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
-import java.util.regex.Pattern;
 
 // Handles march-slot availability checks, rally flag interaction,
 // and left-panel menu toggling for deployment workflows.
 public class MarchHelper {
 
+    private static final int SLOT_COUNT = 6;
+    private static final int LOCKED_FLAG_THRESHOLD = 88;
+    private static final int MAX_FLAG_SLOTS = 6;
+    private static final int FLAG_SLOT_TOLERANCE_PX = 45;
     private static final Pattern TIMER_PATTERN = Pattern.compile("\\b\\d{1,2}:\\d{2}(?::\\d{2})?\\b");
     private static final PointData MARCH_RECALL_CONFIRM_TOP_LEFT = new PointData(446, 780);
     private static final PointData MARCH_RECALL_CONFIRM_BOTTOM_RIGHT = new PointData(578, 800);
@@ -58,12 +64,9 @@ public class MarchHelper {
     public List<MarchSlotState> readMarchQueue() {
         openLeftMenuCitySection(false);
         try {
-            RawImageData frame = emu.captureScreen(device);
-            BufferedImage image = TesseractOcrProvider.toBufferedImage(frame);
-
             List<MarchSlotState> slots = new ArrayList<>(SLOT_COUNT);
             for (int index = 0; index < SLOT_COUNT; index++) {
-                slots.add(readSlot(frame, image, index));
+                slots.add(readSlot(index));
             }
             log.info("March queue: " + slots.stream()
                     .map(slot -> "#" + slot.slot() + "=" + slot.status()
@@ -79,49 +82,23 @@ public class MarchHelper {
     }
 
     // Detects currently usable march capacity from the left march queue panel.
-    // A slot counts when OCR can read either Idle or a time string.
+    // A slot counts when it is not LOCKED.
     public int detectUsableMarchSlots() {
-        openLeftMenuCitySection(false);
-        int usableSlots = 0;
-
-        try {
-            for (int i = 0; i < CommonGameAreas.MARCH_SLOTS_TOP_LEFT.length; i++) {
-                PointData tl = CommonGameAreas.MARCH_SLOTS_TOP_LEFT[i];
-                PointData br = CommonGameAreas.MARCH_SLOTS_BOTTOM_RIGHT[i];
-                String raw = readSlotText(tl, br);
-                if (isUnlockedSlot(raw)) {
-                    usableSlots++;
-                }
-            }
-            log.info("Detected usable march slots: " + usableSlots);
-            return usableSlots;
-        } finally {
-            dismissLeftPanel();
-        }
+        int usableSlots = (int) readMarchQueue().stream()
+            .filter(slot -> slot.status().countsTowardsCapacity())
+                .count();
+        log.info("Detected usable march slots: " + usableSlots);
+        return usableSlots;
     }
 
     // Counts only usable march slots that are currently occupied.
     public int countOccupiedUsableMarchSlots() {
-        openLeftMenuCitySection(false);
-        int occupiedSlots = 0;
-
-        try {
-            for (int i = 0; i < CommonGameAreas.MARCH_SLOTS_TOP_LEFT.length; i++) {
-                PointData tl = CommonGameAreas.MARCH_SLOTS_TOP_LEFT[i];
-                PointData br = CommonGameAreas.MARCH_SLOTS_BOTTOM_RIGHT[i];
-                String raw = readSlotText(tl, br);
-                if (!isUnlockedSlot(raw)) {
-                    continue;
-                }
-                if (!isIdleSlot(raw)) {
-                    occupiedSlots++;
-                }
-            }
-            log.info("Detected occupied usable march slots: " + occupiedSlots);
-            return occupiedSlots;
-        } finally {
-            dismissLeftPanel();
-        }
+        int occupiedSlots = (int) readMarchQueue().stream()
+            .filter(slot -> slot.status().countsTowardsCapacity())
+                .filter(slot -> slot.status() != MarchSlotStatus.IDLE)
+                .count();
+        log.info("Detected occupied usable march slots: " + occupiedSlots);
+        return occupiedSlots;
     }
 
     // Recalls all active marches shown in the march queue panel.
@@ -163,63 +140,95 @@ public class MarchHelper {
         }
     }
 
-    private boolean attemptSlotOcr(PointData topLeft, PointData bottomRight) {
-        int attempt = 0;
-        while (attempt < 3) {
-            try {
-                String text = emu.readText(device, topLeft, bottomRight);
-                if (text != null && text.toLowerCase().contains("idle")) return true;
-                if (attempt < 2) Thread.sleep(100);
-            } catch (IOException | TesseractException ex) {
-                log.debug("Slot OCR #" + (attempt + 1) + " failed: " + ex.getMessage());
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-            attempt++;
-        }
-        return false;
+    private MarchSlotState readSlot(int index) {
+        AreaData statusArea = CommonGameAreas.MARCH_QUEUE_STATUS[index];
+        AreaData timerArea = CommonGameAreas.MARCH_QUEUE_TIMER[index];
+        AreaData iconArea = CommonGameAreas.MARCH_QUEUE_ICON[index];
+
+        String statusText = ocrStrings.attemptRecognition(
+                statusArea.topLeft(),
+                statusArea.bottomRight(),
+                2,
+                120L,
+                null,
+                text -> text != null,
+                text -> text);
+
+        String timerText = ocrStrings.attemptRecognition(
+                timerArea.topLeft(),
+                timerArea.bottomRight(),
+                2,
+                120L,
+                CommonOCRSettings.MARCH_QUEUE_TIMER_SETTINGS,
+                text -> text != null,
+                text -> text);
+
+        Duration countdown = parseCountdown(timerText);
+        MarchSlotStatus status = classifyStatus(statusText, countdown, iconArea);
+        return new MarchSlotState(index + 1, status, countdown);
     }
 
-    private String readSlotText(PointData topLeft, PointData bottomRight) {
-        int attempt = 0;
-        while (attempt < 3) {
-            try {
-                String text = emu.readText(device, topLeft, bottomRight);
-                if (text != null && !text.isBlank()) {
-                    return text;
-                }
-                if (attempt < 2) {
-                    Thread.sleep(100);
-                }
-            } catch (IOException | TesseractException ex) {
-                log.debug("Slot text OCR #" + (attempt + 1) + " failed: " + ex.getMessage());
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                return "";
-            }
-            attempt++;
-        }
-        return "";
-    }
-
-    private boolean isUnlockedSlot(String text) {
-        String normalized = text == null ? "" : text.toLowerCase(Locale.ENGLISH);
+    private MarchSlotStatus classifyStatus(String statusText, Duration countdown, AreaData iconArea) {
+        String normalized = statusText == null ? "" : statusText.toLowerCase(Locale.ENGLISH);
         if (normalized.contains("unlock") || normalized.contains("unavailable")) {
-            return false;
+            return MarchSlotStatus.LOCKED;
         }
-        return isIdleSlot(normalized) || TIMER_PATTERN.matcher(normalized).find();
-    }
-
-    private boolean isIdleSlot(String text) {
-        String normalized = text == null ? "" : text.toLowerCase(Locale.ENGLISH);
         if (normalized.contains("idle")) {
-            return true;
+            return MarchSlotStatus.IDLE;
         }
-        return false;
+        if (countdown != null) {
+            if (isReturningIcon(iconArea)) {
+                return MarchSlotStatus.RETURNING;
+            }
+            if (normalized.contains("gather")) {
+                return MarchSlotStatus.GATHERING;
+            }
+            return MarchSlotStatus.BUSY_UNKNOWN;
+        }
+        return MarchSlotStatus.STATIONED;
     }
 
-    public void selectFlag(Integer flagNumber) {
+    private boolean isReturningIcon(AreaData iconArea) {
+        ImageSearchResultData icon = templateSearch.locatePattern(
+                TemplatesEnum.MARCH_QUEUE_RETURNING_ICON,
+                SearchConfig.builder()
+                        .withArea(iconArea)
+                        .withThreshold(88)
+                        .withMaxAttempts(1)
+                        .build());
+        return icon != null && icon.isFound();
+    }
+
+    private Duration parseCountdown(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String text = raw.trim();
+        java.util.regex.Matcher matcher = TIMER_PATTERN.matcher(text);
+        if (!matcher.find()) {
+            return null;
+        }
+        String timer = matcher.group();
+        String[] parts = timer.split(":");
+        try {
+            if (parts.length == 2) {
+                long minutes = Long.parseLong(parts[0]);
+                long seconds = Long.parseLong(parts[1]);
+                return Duration.ofMinutes(minutes).plusSeconds(seconds);
+            }
+            if (parts.length == 3) {
+                long hours = Long.parseLong(parts[0]);
+                long minutes = Long.parseLong(parts[1]);
+                long seconds = Long.parseLong(parts[2]);
+                return Duration.ofHours(hours).plusMinutes(minutes).plusSeconds(seconds);
+            }
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+        return null;
+    }
+
+    public boolean selectFlag(Integer flagNumber) {
         if (flagNumber == null) {
             log.debug("No flag — skipping");
             return true;

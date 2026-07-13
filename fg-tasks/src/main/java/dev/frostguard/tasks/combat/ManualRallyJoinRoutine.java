@@ -21,14 +21,7 @@ import java.util.List;
 
 public class ManualRallyJoinRoutine extends DelayedTask {
 
-<<<<<<< HEAD
 private static final int DEFAULT_TOTAL_MARCHES = 6;
-=======
-// An enabled Join button is green; a disabled one is greyed out.
-private static final Color JOIN_BUTTON_GREEN = new Color(0x25, 0xB7, 0x56);
-private static final int JOIN_BUTTON_GREEN_TOLERANCE = 40;
-private static final int MIN_JOIN_BUTTON_GREEN_PIXELS = 5;
->>>>>>> 002a82a1e8d5e1dbe6419a245847bea53726c736
 
 public ManualRallyJoinRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         super(profile, tpTask);

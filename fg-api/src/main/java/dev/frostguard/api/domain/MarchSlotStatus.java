@@ -26,4 +26,13 @@ public enum MarchSlotStatus {
 
     /** Occupied with a countdown that does not describe the return (rally, attack, unrecognised). */
     BUSY_UNKNOWN
+
+    ;
+
+    /**
+     * Capacity counting rule from PR-24: only LOCKED slots are excluded from total march capacity.
+     */
+    public boolean countsTowardsCapacity() {
+        return this != LOCKED;
+    }
 }

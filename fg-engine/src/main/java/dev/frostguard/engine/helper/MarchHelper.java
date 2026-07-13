@@ -7,11 +7,12 @@ import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.engine.emulator.EmulatorController;
 import dev.frostguard.engine.nav.CommonGameAreas;
+import dev.frostguard.engine.nav.CommonOCRSettings;
 import dev.frostguard.engine.nav.RallyFlagCoordinates;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.vision.logging.ProfileContextLogger;
 import dev.frostguard.vision.ocr.ResilientOcrExecutor;
-import net.sourceforge.tess4j.TesseractException;
+import dev.frostguard.vision.ocr.TesseractOcrProvider;
 
 import java.io.IOException;
 import java.util.List;
@@ -43,31 +44,38 @@ public class MarchHelper {
         this.templateSearch = new TemplateSearchHelper(emuManager, emulatorNumber, profile);
     }
 
-    // Scans all 6 march slots via OCR; returns true on first idle slot found.
     public boolean checkMarchesAvailable() {
-        openLeftMenuCitySection(false);
-        int remaining = 6;
-        try {
-            while (remaining > 0) {
-                int slotLabel = remaining;
-                remaining--;
-                PointData tl = CommonGameAreas.MARCH_SLOTS_TOP_LEFT[6 - slotLabel];
-                PointData br = CommonGameAreas.MARCH_SLOTS_BOTTOM_RIGHT[6 - slotLabel];
-                if (attemptSlotOcr(tl, br)) {
-                    log.info("Idle slot: #" + slotLabel);
-                    dismissLeftPanel();
-                    return true;
-                }
-                log.debug("Slot #" + slotLabel + " busy");
-            }
-        } catch (Exception ex) {
-            log.error("March scan error: " + ex.getMessage());
-            dismissLeftPanel();
-            return false;
+        boolean anyIdle = readMarchQueue().stream().anyMatch(MarchSlotState::isIdle);
+        if (!anyIdle) {
+            log.info("No idle march slot");
         }
-        log.info("All 6 slots occupied");
-        dismissLeftPanel();
-        return false;
+        return anyIdle;
+    }
+
+    // Reads every March Queue row from a single screenshot. Text is deliberately avoided: the status
+    // line is classified by colour (white "Idle", orange "Unlock", red "Unavailable", nothing at all
+    // for stationed troops) and the activity by its icon. Only the countdown needs OCR.
+    public List<MarchSlotState> readMarchQueue() {
+        openLeftMenuCitySection(false);
+        try {
+            RawImageData frame = emu.captureScreen(device);
+            BufferedImage image = TesseractOcrProvider.toBufferedImage(frame);
+
+            List<MarchSlotState> slots = new ArrayList<>(SLOT_COUNT);
+            for (int index = 0; index < SLOT_COUNT; index++) {
+                slots.add(readSlot(frame, image, index));
+            }
+            log.info("March queue: " + slots.stream()
+                    .map(slot -> "#" + slot.slot() + "=" + slot.status()
+                            + (slot.countdown() == null ? "" : "(" + slot.countdown() + ")"))
+                    .collect(Collectors.joining(" ")));
+            return slots;
+        } catch (Exception ex) {
+            log.error("March queue read error: " + ex.getMessage());
+            return List.of();
+        } finally {
+            dismissLeftPanel();
+        }
     }
 
     // Detects currently usable march capacity from the left march queue panel.
@@ -214,27 +222,39 @@ public class MarchHelper {
     public void selectFlag(Integer flagNumber) {
         if (flagNumber == null) {
             log.debug("No flag — skipping");
-            return;
+            return true;
+        }
+        if (isFlagLocked(flagNumber)) {
+            log.warn("Flag #" + flagNumber + " shows a padlock — not selecting it");
+            return false;
         }
         log.debug("Selecting flag #" + flagNumber);
         emu.touchPoint(device, RallyFlagCoordinates.pointForFlag(flagNumber));
         interruptibleWait(300);
+        return true;
+    }
 
-        String status = ocrStrings.attemptRecognition(
-                CommonGameAreas.FLAG_UNLOCK_TEXT_OCR.topLeft(),
-                CommonGameAreas.FLAG_UNLOCK_TEXT_OCR.bottomRight(),
-                3, 200L, null, Objects::nonNull, text -> text);
+    // Locating every padlock across the strip and mapping each to its nearest slot is immune to the
+    // few pixels of tile drift; a per-slot window would leave a 58px template barely any room to slide.
+    private boolean isFlagLocked(int flagNumber) {
+        int slotX = RallyFlagCoordinates.pointForFlag(flagNumber).getX();
+        List<ImageSearchResultData> padlocks = emu.locateAllPatterns(device,
+                TemplatesEnum.RALLY_LOCKED_FLAG_SLOT,
+                CommonGameAreas.RALLY_FLAG_BAR.topLeft(),
+                CommonGameAreas.RALLY_FLAG_BAR.bottomRight(),
+                LOCKED_FLAG_THRESHOLD, MAX_FLAG_SLOTS);
 
-        if (status == null) {
-            log.debug("Flag #" + flagNumber + " confirmed");
-            return;
+        // The multi-hit matcher logs nothing of its own, so record what it saw.
+        log.debug("Flag bar: " + padlocks.size() + " padlock(s) located while checking flag #" + flagNumber);
+
+        for (ImageSearchResultData padlock : padlocks) {
+            if (Math.abs(padlock.getPoint().getX() - slotX) <= FLAG_SLOT_TOLERANCE_PX) {
+                log.info("Flag #" + flagNumber + " padlocked at " + padlock.getPoint()
+                        + " score=" + padlock.getMatchScore());
+                return true;
+            }
         }
-        if (!status.toLowerCase().contains("unlock")) {
-            log.debug("Flag #" + flagNumber + " confirmed");
-            return;
-        }
-        log.warn("Flag #" + flagNumber + " locked — backing out");
-        emu.pressBack(device);
+        return false;
     }
 
     public void openLeftMenuCitySection(boolean cityTab) {

@@ -20,12 +20,21 @@ public final class CommonOCRSettings {
     public static final TesseractSettingsData SPENT_STAMINA_SETTINGS =
             buildSpentStaminaConfig();
 
-    // travel time: "12:34:56" style
+    // travel time: "12:34:56" in white, next to a clock icon that has no white pixel at all
     public static final TesseractSettingsData TRAVEL_TIME_SETTINGS =
-            TesseractSettingsData.builder()
+            buildLstmConfig("0123456789:", true, 255, 255, 255, PageAnalysis.SINGLE_LINE);
+
+    // march queue countdown: "00:01:53" in white on top of the progress bar
+    public static final TesseractSettingsData MARCH_QUEUE_TIMER_SETTINGS =
+            buildLstmConfig("0123456789:", true, 255, 255, 255, PageAnalysis.SINGLE_LINE);
+
+    // polar terror level: dark slate digits inside a pale pill
+    public static final TesseractSettingsData POLAR_LEVEL_SETTINGS =
+            TesseractSettingsData.assembler()
+                    .charWhitelist("0123456789")
                     .pageAnalysis(PageAnalysis.SINGLE_LINE)
-                    .recognitionEngine(RecognitionEngine.LSTM_ONLY)
-                    .allowedGlyphs("0123456789:")
+                    .stripBackground(true)
+                    .setTextColor(new Color(66, 84, 108))
                     .build();
 
     // extraction pattern for pulling first integer from noisy OCR text

@@ -48,6 +48,27 @@ public final class CommonGameAreas {
             point(258, 549), point(258, 476), point(258, 403)
     };
 
+    // ── wilderness March Queue rows (index 0 → queue 1, top) ─────────
+    //
+    // Each row carries an activity icon on the left and, below its title, a status line holding
+    // either a word ("Idle"/"Unlock"/"Unavailable") or a countdown. Stationed troops show no status
+    // line at all. The timer window matches the geometry GatherRoutine has been reading for a while.
+
+    private static final int[] MARCH_QUEUE_ROW_Y = { 375, 448, 521, 594, 667, 740 };
+
+    public static final AreaData[] MARCH_QUEUE_STATUS = marchQueueRows(150, 0, 300, 28);
+    public static final AreaData[] MARCH_QUEUE_TIMER  = marchQueueRows(152, 3, 292, 22);
+    // padded past the 46x46 icon so template matching has room to slide
+    public static final AreaData[] MARCH_QUEUE_ICON   = marchQueueRows(18, -27, 72, 27);
+
+    private static AreaData[] marchQueueRows(int x1, int offsetY1, int x2, int offsetY2) {
+        AreaData[] rows = new AreaData[MARCH_QUEUE_ROW_Y.length];
+        for (int i = 0; i < rows.length; i++) {
+            rows[i] = region(x1, MARCH_QUEUE_ROW_Y[i] + offsetY1, x2, MARCH_QUEUE_ROW_Y[i] + offsetY2);
+        }
+        return rows;
+    }
+
     // ── alliance war controls ────────────────────────────────────────
 
     public static final AreaData BOTTOM_MENU_ALLIANCE_BUTTON       = region(493, 1187, 561, 1240);
@@ -57,8 +78,44 @@ public final class CommonGameAreas {
 
     // ── rally flag & deployment ──────────────────────────────────────
 
-    public static final AreaData FLAG_UNLOCK_TEXT_OCR   = region(297, 126, 424, 168);
-    public static final AreaData TRAVEL_TIME_OCR_AREA   = region(504, 1134, 622, 1162);
+    // The whole flag tab strip. Slot centres drift a few pixels between profiles, so padlocks are
+    // located across the strip and mapped to the nearest slot rather than searched slot by slot.
+    public static final AreaData RALLY_FLAG_BAR         = region(0, 88, 700, 158);
+    // Equalize sits in the bottom button bar, but its x shifts once a profile unlocks the Balance
+    // button beside it, so it is matched inside the bar rather than tapped at a fixed point.
+    public static final AreaData RALLY_BOTTOM_BUTTON_BAR      = region(0, 1130, 460, 1279);
+    public static final AreaData RALLY_TROOP_TRAINING_AREA    = region(190, 900, 530, 1060);
+    public static final AreaData RALLY_MARCH_QUEUE_FULL_AREA  = region(220, 300, 500, 380);
+    public static final PointData RALLY_MARCH_QUEUE_FULL_CLOSE = point(640, 338);
+    // Body of the "Other Troops are marching toward the same target" confirmation.
+    public static final AreaData SAME_TARGET_DIALOG_AREA      = region(60, 555, 680, 650);
+
+    // ── Hold-a-rally preparation time ────────────────────────────────
+    //
+    // The dialog keeps whatever preparation time was last picked in game and the bot never sets it,
+    // so the ticked option is read per rally. Only a green tick marks the active option.
+
+    public static final int[] RALLY_SET_TIME_MINUTES = { 3, 5, 10, 15 };
+    public static final AreaData[] RALLY_SET_TIME_CHECKBOXES = {
+            region(110, 592, 152, 634), region(375, 592, 417, 634),
+            region(110, 670, 152, 712), region(375, 670, 417, 712)
+    };
+
+    // Polar Terror search panel: the level number sits in the pill right of the slider, not on the
+    // slider bar itself.
+    public static final AreaData POLAR_LEVEL_DISPLAY = region(565, 1030, 665, 1078);
+
+    // ── stamina "Obtain more" dialog ─────────────────────────────────
+    //
+    // Reachable both from a red deploy cost and straight from the profile stamina bar.
+
+    public static final AreaData STAMINA_DIALOG_CURRENT     = region(340, 248, 470, 292);
+    public static final AreaData STAMINA_DIALOG_ITEM_COUNT  = region(116, 535, 154, 570);
+    public static final AreaData STAMINA_DIALOG_USE_BUTTON  = region(490, 480, 670, 565);
+    public static final PointData STAMINA_DIALOG_CLOSE      = point(665, 135);
+    // Starts right of the clock icon (its right edge sits at x 505-507): a sliver of the dial reads
+    // as a leading "1" and turns "00:00:39" into an unparsable "100:00:39".
+    public static final AreaData TRAVEL_TIME_OCR_AREA   = region(510, 1134, 622, 1162);
 
     // ── character identity ───────────────────────────────────────────
 

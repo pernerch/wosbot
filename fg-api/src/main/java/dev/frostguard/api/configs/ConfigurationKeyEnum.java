@@ -174,6 +174,7 @@ public enum ConfigurationKeyEnum {
     INTEL_EXPLORATION_BOOL                      ("false",   Boolean.class,  ConfigCategory.INTEL),
     INTEL_FC_ERA_BOOL                           ("false",   Boolean.class,  ConfigCategory.INTEL),
     INTEL_FIRE_BEAST_BOOL                       ("false",   Boolean.class,  ConfigCategory.INTEL),
+    INTEL_MARCHES_INT                           ("6",       Integer.class,  ConfigCategory.INTEL),
     INTEL_RECALL_GATHER_TROOPS_BOOL             ("false",   Boolean.class,  ConfigCategory.INTEL),
     INTEL_SMART_PROCESSING_BOOL                 ("false",   Boolean.class,  ConfigCategory.INTEL),
     INTEL_USE_FLAG_BOOL                         ("false",   Boolean.class,  ConfigCategory.INTEL),
@@ -190,6 +191,7 @@ public enum ConfigurationKeyEnum {
     /* ─────────── gathering ─────────── */
 
     GATHER_ACTIVE_MARCH_QUEUE_INT   ("6",                   Integer.class,  ConfigCategory.GATHERING),
+    INIT_DETECTED_TOTAL_MARCHES_INT ("6",                   Integer.class,  ConfigCategory.GATHERING),
     GATHER_COAL_BOOL                ("false",               Boolean.class,  ConfigCategory.GATHERING),
     GATHER_COAL_LEVEL_INT           ("8",                   Integer.class,  ConfigCategory.GATHERING),
     GATHER_IRON_BOOL                ("false",               Boolean.class,  ConfigCategory.GATHERING),

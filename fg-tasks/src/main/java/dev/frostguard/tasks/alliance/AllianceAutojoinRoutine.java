@@ -42,6 +42,8 @@ private static final int MAX_QUEUE_COUNT_LIMIT = 6;
 
 private static final int DEFAULT_QUEUE_COUNT_VALUE = 3;
 
+private static final int DEFAULT_TOTAL_MARCHES = 6;
+
 private static final int SCHEDULE_HOURS_VALUE = 7;
 
 private static final int SCHEDULE_MINUTES_VALUE = 50;
@@ -161,8 +163,6 @@ private void hydrateConfiguration() {
 		int rawQueueCount = profile.getConfig(
 				ConfigurationKeyEnum.ALLIANCE_AUTOJOIN_QUEUES_INT,
 				Integer.class);
-
-
 		if (rawQueueCount < MIN_QUEUE_COUNT_FLOOR || rawQueueCount > MAX_QUEUE_COUNT_LIMIT) {
 			logWarning(routineLogAllianceAutojoinLine("Invalid queue count configured: " + rawQueueCount +
 					". Using default: " + DEFAULT_QUEUE_COUNT_VALUE));
@@ -171,8 +171,29 @@ private void hydrateConfiguration() {
 			queueCount = rawQueueCount;
 		}
 
+		int initDetectedTotal = resolveInitDetectedTotalMarches();
+		if (queueCount > initDetectedTotal) {
+			int previous = queueCount;
+			queueCount = initDetectedTotal;
+			profile.setConfig(ConfigurationKeyEnum.ALLIANCE_AUTOJOIN_QUEUES_INT, queueCount);
+			setShouldUpdateConfig(true);
+			logWarning(routineLogAllianceAutojoinLine("Configured auto-join queues (" + previous
+					+ ") exceed init-detected total marches (" + initDetectedTotal
+					+ "). Corrected GUI value (" + ConfigurationKeyEnum.ALLIANCE_AUTOJOIN_QUEUES_INT
+					+ ") to " + queueCount + "."));
+		}
+
 		logInfo(routineLogAllianceAutojoinLine("Configuration loaded - Use all troops: " + useAllTroops +
-				", Queue count: " + queueCount));
+				", Queue count: " + queueCount + ", Init detected total: " + initDetectedTotal));
+	}
+
+	private int resolveInitDetectedTotalMarches() {
+		Integer initDetected = profile.getConfig(ConfigurationKeyEnum.INIT_DETECTED_TOTAL_MARCHES_INT, Integer.class);
+		if (initDetected == null) {
+			initDetected = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, Integer.class);
+		}
+		int normalized = initDetected != null ? initDetected : DEFAULT_TOTAL_MARCHES;
+		return Math.max(MIN_QUEUE_COUNT_FLOOR, Math.min(MAX_QUEUE_COUNT_LIMIT, normalized));
 	}
 
 private void enableAutoJoinFlow() {

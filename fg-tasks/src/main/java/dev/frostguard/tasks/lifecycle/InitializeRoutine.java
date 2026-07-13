@@ -1,5 +1,6 @@
 package dev.frostguard.tasks.lifecycle;
 
+import dev.frostguard.api.configs.ConfigurationKeyEnum;
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.engine.emulator.EmulatorController;
@@ -55,6 +56,7 @@ public class InitializeRoutine extends DelayedTask {
 
 	// ========== Home Screen Detection Constants ==========
 	private static final int MAX_HOME_SCREEN_ATTEMPTS = 10;
+	private static final int MAX_INIT_FAILURES_BEFORE_HARD_RECOVERY = 3;
 
 	// ========== Instance State ==========
 	/**
@@ -62,6 +64,7 @@ public class InitializeRoutine extends DelayedTask {
 	 * This persists across task executions (when recurring=true triggers retry).
 	 */
 	boolean isStarted = false;
+	private int consecutiveInitFailures = 0;
 
 	/**
 	 * Helper for character switching operations.
@@ -125,9 +128,32 @@ public class InitializeRoutine extends DelayedTask {
 			// Character verification/switching failed - already handled
 			return;
 		}
+
+		detectAndPersistMarchCapacity();
 		
 		// All checks passed - complete initialization
 		handleInitializationSuccess();
+	}
+
+	private void detectAndPersistMarchCapacity() {
+		try {
+			int detectedMarches = marchHelper.detectUsableMarchSlots();
+			int occupiedMarches = marchHelper.countOccupiedUsableMarchSlots();
+			int idleMarches = Math.max(0, detectedMarches - occupiedMarches);
+
+			if (detectedMarches > 0) {
+				profile.setConfig(ConfigurationKeyEnum.INIT_DETECTED_TOTAL_MARCHES_INT, detectedMarches);
+				setShouldUpdateConfig(true);
+				logInfo("Init detected march capacity: total=" + detectedMarches
+						+ ", idle=" + idleMarches
+						+ ", occupied=" + occupiedMarches
+						+ " (saved to profile setting INIT_DETECTED_TOTAL_MARCHES_INT).");
+			} else {
+				logWarning("Init march-capacity detection returned 0. Keeping existing profile default.");
+			}
+		} catch (Exception ex) {
+			logWarning("Init march-capacity detection failed: " + ex.getMessage());
+		}
 	}
 
 	/**
@@ -302,7 +328,9 @@ public class InitializeRoutine extends DelayedTask {
 	 * the full initialization flow again, including relaunching the emulator.
 	 */
 	private void handleHomeScreenNotFound() {
-		logError("Home screen not found after multiple attempts. Restarting emulator.");
+		consecutiveInitFailures++;
+		logError("Home screen not found after multiple attempts (failure " + consecutiveInitFailures
+				+ "/" + MAX_INIT_FAILURES_BEFORE_HARD_RECOVERY + "). Restarting emulator.");
 
 		// Perform ADB health check before closing emulator
 		// This may restart the ADB bridge if it's degraded
@@ -315,9 +343,28 @@ public class InitializeRoutine extends DelayedTask {
 					+ "Will still try to restart emulator.");
 		}
 
+		performRecoveryRestartCycle(consecutiveInitFailures >= MAX_INIT_FAILURES_BEFORE_HARD_RECOVERY);
+		setRecurring(true); // Trigger immediate retry
+	}
+
+	private void performRecoveryRestartCycle(boolean hardRecovery) {
 		emuManager.closeEmulator(EMULATOR_NUMBER);
 		isStarted = false;
-		setRecurring(true); // Trigger immediate retry
+
+		if (!hardRecovery) {
+			return;
+		}
+
+		logWarning("Initialize failed repeatedly. Running hard recovery: emulator restart + game launch + reinitialize.");
+		consecutiveInitFailures = 0;
+
+		emuManager.launchEmulator(EMULATOR_NUMBER);
+		sleepTask(10000);
+
+		if (!emuManager.isPackageRunning(EMULATOR_NUMBER, EmulatorController.GAME.getPackageName())) {
+			emuManager.launchApp(EMULATOR_NUMBER, EmulatorController.GAME.getPackageName());
+			sleepTask(10000);
+		}
 	}
 
 	/**
@@ -402,6 +449,7 @@ public class InitializeRoutine extends DelayedTask {
 	 * (recurring=false is already set at the start of execute()).
 	 */
 	private void handleInitializationSuccess() {
+		consecutiveInitFailures = 0;
 		logInfo("Initialization successful. Reading initial stamina value.");
 		staminaHelper.updateStaminaFromProfile();
 		logInfo("Initialization task completed successfully.");

@@ -106,6 +106,14 @@ public class TaskGanttOverviewController implements TaskStatusChangeListener, St
     private static final double LABEL_COL_PX   = 128;
     private static final double TZ_COL_PX      = 60;
 
+    private static final Comparator<AccountDescriptor> PROFILE_TIMELINE_COMPARATOR =
+        Comparator.comparing(
+                (AccountDescriptor p) -> normalizeSortToken(p.getEmulatorNumber()),
+                Comparator.naturalOrder())
+            .thenComparing(
+                p -> normalizeSortToken(p.getName()),
+                Comparator.naturalOrder());
+
     /* ── Short-name lookup for well-known tasks ── */
 
     private static final Map<String, String> SHORT_NAMES = Map.ofEntries(
@@ -370,7 +378,7 @@ public class TaskGanttOverviewController implements TaskStatusChangeListener, St
                     List<AccountDescriptor> allEnabled = ProfileService.obtain().fetchAllAccounts()
                         .stream()
                         .filter(p -> Boolean.TRUE.equals(p.getEnabled()))
-                        .sorted(Comparator.comparing(AccountDescriptor::getName))
+                        .sorted(PROFILE_TIMELINE_COMPARATOR)
                         .collect(Collectors.toList());
 
                     if (!allEnabled.isEmpty()) {
@@ -795,7 +803,7 @@ public class TaskGanttOverviewController implements TaskStatusChangeListener, St
 
         List<AccountDescriptor> enabled = all.stream()
             .filter(p -> Boolean.TRUE.equals(p.getEnabled()))
-            .sorted(Comparator.comparing(AccountDescriptor::getName))
+            .sorted(PROFILE_TIMELINE_COMPARATOR)
             .collect(Collectors.toList());
 
         tasksByProfile.clear();
@@ -836,6 +844,10 @@ public class TaskGanttOverviewController implements TaskStatusChangeListener, St
 
             buildProfileRow(profile, visible, computedWidth);
         }
+    }
+
+    private static String normalizeSortToken(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ENGLISH);
     }
 
     /* ════════════════════════════════════════════════

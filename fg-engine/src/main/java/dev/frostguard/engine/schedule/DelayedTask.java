@@ -4,6 +4,7 @@ import dev.frostguard.vision.convert.RegexNumberParser;
 import dev.frostguard.vision.ocr.ResilientOcrExecutor;
 import dev.frostguard.data.repository.ProfileRepository;
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.OcrDebugContext;
 import dev.frostguard.api.configs.TpMessageSeverityEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.engine.emulator.EmulatorController;
@@ -171,6 +172,7 @@ public abstract class DelayedTask implements Runnable, Delayed {
         long t0 = System.currentTimeMillis();
         int baselineOcr = this.currentOcrFailures;
         int baselineTemplate = this.templateSearchHelper.getFailedSearches();
+        OcrDebugContext.setContext(profile != null ? profile.getName() : null, getClass().getSimpleName());
 
         try {
             // lifecycle tasks skip validation entirely
@@ -214,6 +216,7 @@ public abstract class DelayedTask implements Runnable, Delayed {
             int templateDelta = this.templateSearchHelper.getFailedSearches() - baselineTemplate;
             dev.frostguard.engine.service.StatisticsService.obtain()
                     .logJobExecution(profile, taskName, elapsed, ocrDelta, templateDelta);
+            OcrDebugContext.clear();
         }
     }
 

@@ -36,6 +36,8 @@ private final TaskManagementService taskManagementService = TaskManagementServic
 
 private static final int MAX_POLAR_LEVEL_LIMIT = 8;
 
+private static final int DEFAULT_TOTAL_MARCHES = 6;
+
 private static final Map<Long, List<LocalDateTime>> activeDeployments = new ConcurrentHashMap<>();
 
 private int polarTerrorLevel;
@@ -308,8 +310,29 @@ private void hydrateConfiguration() {
         if (this.maxMarches > 6)
             this.maxMarches = 6;
 
+        int initDetectedTotal = resolveInitDetectedTotalMarches();
+        if (this.maxMarches > initDetectedTotal) {
+            int previous = this.maxMarches;
+            this.maxMarches = initDetectedTotal;
+            profile.setConfig(ConfigurationKeyEnum.POLAR_TERROR_MARCHES_INT, this.maxMarches);
+            setShouldUpdateConfig(true);
+            logWarning(routineLogPolarTerrorHuntingLine("Configured polar marches (" + previous
+                    + ") exceed init-detected total marches (" + initDetectedTotal
+                    + "). Corrected GUI value (" + ConfigurationKeyEnum.POLAR_TERROR_MARCHES_INT
+                    + ") to " + this.maxMarches + "."));
+        }
+
         logDebug(routineLogPolarTerrorHuntingLine("Configuration loaded: polarLevel=" + polarTerrorLevel + ", limitedHunting=" + limitedHunting +
-                ", maxMarches=" + maxMarches));
+                ", maxMarches=" + maxMarches + ", initDetectedTotal=" + initDetectedTotal));
+    }
+
+    private int resolveInitDetectedTotalMarches() {
+        Integer initDetected = profile.getConfig(ConfigurationKeyEnum.INIT_DETECTED_TOTAL_MARCHES_INT, Integer.class);
+        if (initDetected == null) {
+            initDetected = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, Integer.class);
+        }
+        int normalized = initDetected != null ? initDetected : DEFAULT_TOTAL_MARCHES;
+        return Math.max(1, Math.min(6, normalized));
     }
 
 private boolean polarsRemainingFlow(int polarLevel) {

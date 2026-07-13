@@ -1233,24 +1233,9 @@ private void manageRescheduling(boolean anyIntelProcessed,
 	}
 
 	private int resolveDynamicProfileMarchCapacityFlow() {
-		int idleMarches = countIdleMarchesFlow();
-		int activeMarchSlots = countActiveMarchSlotsFlow();
-		int resolved = idleMarches + activeMarchSlots;
-
-		if (resolved <= 0) {
-			resolved = resolveConfiguredIntelMarchesFlow();
-			logInfo(routineLogIntelligenceLine("Dynamic profile march detection returned 0 slots. Using fallback capacity: "
-					+ resolved));
-		} else {
-			resolved = Math.max(MIN_INTEL_MARCH_SLOTS, Math.min(MAX_INTEL_MARCH_SLOTS, resolved));
-			if (intelMarchCapacityOverride != null) {
-				resolved = Math.min(resolved, intelMarchCapacityOverride);
-			}
-		}
-
-		logInfo(routineLogIntelligenceLine("Resolved dynamic profile march capacity: idle=" + idleMarches
-				+ ", active=" + activeMarchSlots + ", override=" + intelMarchCapacityOverride
-				+ ", effective=" + resolved));
+		int resolved = resolveConfiguredIntelMarchesFlow();
+		logInfo(routineLogIntelligenceLine("Resolved Intel march capacity from profile: effective=" + resolved
+				+ ", override=" + intelMarchCapacityOverride));
 		return resolved;
 	}
 
@@ -1296,15 +1281,36 @@ private void manageRescheduling(boolean anyIntelProcessed,
 	}
 
 	private int resolveConfiguredIntelMarchesFlow() {
-		// Intel fallback capacity is based on profile march ceiling, not gather/autojoin task limits.
-		int resolved = MAX_INTEL_MARCH_SLOTS;
-		resolved = Math.max(MIN_INTEL_MARCH_SLOTS, Math.min(MAX_INTEL_MARCH_SLOTS, resolved));
-		if (intelMarchCapacityOverride != null) {
-			resolved = Math.min(resolved, intelMarchCapacityOverride);
+		Integer profileConfigured = profile.getConfig(ConfigurationKeyEnum.INTEL_MARCHES_INT, Integer.class);
+		int baseConfigured = profileConfigured != null ? profileConfigured : MAX_INTEL_MARCH_SLOTS;
+		int initDetectedTotal = resolveInitDetectedTotalMarchesFlow();
+		if (baseConfigured > initDetectedTotal) {
+			profile.setConfig(ConfigurationKeyEnum.INTEL_MARCHES_INT, initDetectedTotal);
+			setShouldUpdateConfig(true);
+			logWarning(routineLogIntelligenceLine("Configured Intel marches (" + baseConfigured
+					+ ") exceed init-detected total marches (" + initDetectedTotal
+					+ "). Corrected GUI value (" + ConfigurationKeyEnum.INTEL_MARCHES_INT
+					+ ") to " + initDetectedTotal + "."));
+			baseConfigured = initDetectedTotal;
 		}
-		logInfo(routineLogIntelligenceLine("Resolved Intel fallback march capacity: base="
-				+ MAX_INTEL_MARCH_SLOTS + ", override=" + intelMarchCapacityOverride + ", effective=" + resolved));
+
+		// Intel fallback capacity is based on init/profile march baseline and then clamped into valid range.
+		int resolved = baseConfigured;
+		resolved = Math.max(MIN_INTEL_MARCH_SLOTS, Math.min(MAX_INTEL_MARCH_SLOTS, resolved));
+		logInfo(routineLogIntelligenceLine("Resolved Intel fallback march capacity: profileConfigured="
+				+ profileConfigured + " (key=" + ConfigurationKeyEnum.INTEL_MARCHES_INT + ")"
+				+ ", initDetectedTotal=" + initDetectedTotal
+				+ ", effective=" + resolved));
 		return resolved;
+	}
+
+	private int resolveInitDetectedTotalMarchesFlow() {
+		Integer initDetected = profile.getConfig(ConfigurationKeyEnum.INIT_DETECTED_TOTAL_MARCHES_INT, Integer.class);
+		if (initDetected == null) {
+			initDetected = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, Integer.class);
+		}
+		int normalized = initDetected != null ? initDetected : MAX_INTEL_MARCH_SLOTS;
+		return Math.max(MIN_INTEL_MARCH_SLOTS, Math.min(MAX_INTEL_MARCH_SLOTS, normalized));
 	}
 
 	private void applyIntelMarchCapacityOverrideFlow(int adjustedCapacity, String reason) {

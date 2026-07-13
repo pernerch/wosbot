@@ -588,7 +588,7 @@ public class TaskQueue {
             // Changed by pernerch | Date: 2026-07-02 | Why: keep single-profile-per-emulator
             // setups on the original idle path; only evaluate handover when siblings exist.
             if (hasEnabledSiblingOnSameEmulator()) {
-                Optional<PeerSwitchCandidate> peerCandidate = findBestPeerOnSameEmulator();
+                Optional<PeerSwitchCandidate> peerCandidate = findBestPeerOnSameEmulator(idleCap);
                 if (peerCandidate.isPresent()) {
                     handoverSlotToPeer(peerCandidate.get());
                     statusModel.setIdleTimeExceeded(true);
@@ -607,7 +607,7 @@ public class TaskQueue {
         }
     }
 
-    private Optional<PeerSwitchCandidate> findBestPeerOnSameEmulator() {
+    private Optional<PeerSwitchCandidate> findBestPeerOnSameEmulator(int idleCapMinutes) {
         if (profile == null || profile.getEmulatorNumber() == null || profile.getEmulatorNumber().isBlank()) {
             return Optional.empty();
         }
@@ -617,16 +617,20 @@ public class TaskQueue {
             return Optional.empty();
         }
 
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime readyDeadline = now.plusMinutes(Math.max(0, idleCapMinutes));
+
         List<PeerSwitchCandidate> candidates = ProfileService.obtain().fetchAllAccounts().stream()
                 .filter(other -> other != null && other.getId() != null && !other.getId().equals(profile.getId()))
                 .filter(other -> Boolean.TRUE.equals(other.getEnabled()))
                 .filter(other -> profile.getEmulatorNumber().equals(other.getEmulatorNumber()))
                 .map(other -> {
                     TaskQueue q = coordinator.getQueue(other.getId());
-                    if (q == null || !q.isActive()) {
+                    if (q == null || !q.isActive() || !q.hasRunnableTasksWithin(idleCapMinutes)) {
                         return null;
                     }
-                    Optional<PeerSwitchTaskSnapshot> snapshot = q.peekNextPeerSwitchTask();
+                    Optional<PeerSwitchTaskSnapshot> snapshot = q.peekNextPeerSwitchTask()
+                            .filter(value -> !value.scheduledAt().isAfter(readyDeadline));
                     return snapshot.map(value -> new PeerSwitchCandidate(other, q, value)).orElse(null);
                 })
                 .filter(Objects::nonNull)
@@ -636,7 +640,6 @@ public class TaskQueue {
             return Optional.empty();
         }
 
-        LocalDateTime now = LocalDateTime.now();
         boolean allCandidatesOverdue = candidates.stream()
                 .allMatch(candidate -> !candidate.task().scheduledAt().isAfter(now));
 

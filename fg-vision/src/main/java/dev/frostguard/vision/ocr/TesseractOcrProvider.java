@@ -13,6 +13,7 @@ import javax.imageio.ImageIO;
 
 import dev.frostguard.api.configs.OcrDebugImageWriter;
 import dev.frostguard.api.configs.OcrDebugSettings;
+import dev.frostguard.api.configs.OcrDebugContext;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.RawImageData;
 import dev.frostguard.api.domain.TesseractSettingsData;
@@ -57,6 +58,7 @@ public final class TesseractOcrProvider {
         BufferedImage prepared = cropAndPreprocess(
                 capture, clip[0], clip[1], clip[2], clip[3],
                 MAGNIFICATION, false, null);
+        exportReadingImage(prepared, clip[0], clip[1], clip[2], clip[3], "lang");
         return executeRecognition(configureTesseract(lang), prepared);
     }
 
@@ -78,6 +80,7 @@ public final class TesseractOcrProvider {
                 capture, cx, cy, cw, ch, MAGNIFICATION,
                 cfg.isRemoveBackground(), cfg.getTextColor());
         log.debug("Crop + preprocess: {} ms", System.currentTimeMillis() - step);
+        exportReadingImage(prepared, cx, cy, cw, ch, "cfg");
 
         step = System.currentTimeMillis();
         Tesseract engine = configureTesseract(cfg);
@@ -306,6 +309,17 @@ public final class TesseractOcrProvider {
                 full, processed, cx, cy, cw, ch, summary, text);
 
         OcrDebugImageWriter.saveDebugImage(composite, "ocr-diagnostic", System.currentTimeMillis(), 1);
+    }
+
+    private static void exportReadingImage(BufferedImage processed,
+            int cx, int cy, int cw, int ch, String mode) {
+        if (!OcrDebugSettings.isEnabled() || processed == null) {
+            return;
+        }
+
+        String context = OcrDebugContext.getContextToken();
+        String prefix = "ocr-reading-" + context + "-" + mode + "-" + cx + "_" + cy + "_" + cw + "_" + ch;
+        OcrDebugImageWriter.saveDebugImage(processed, prefix, System.currentTimeMillis(), 1);
     }
 
     private static String formatSettingsSummary(TesseractSettingsData cfg, String text) {

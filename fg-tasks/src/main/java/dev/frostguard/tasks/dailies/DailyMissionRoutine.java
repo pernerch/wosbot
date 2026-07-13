@@ -21,6 +21,10 @@ private static final int SAFETY_RESCHEDULE_MINUTES_VALUE = 30;
 
 private static final int POPUP_DISMISS_TAP_COUNT_VALUE = 3;
 
+private static final int INDIVIDUAL_CLAIM_MAX_REPETITIONS = 10;
+
+private static final int INDIVIDUAL_CLAIM_LIMIT_RESCHEDULE_MINUTES = 5;
+
 private static final PointData DAILY_MISSIONS_BUTTON_VALUE = new PointData(50, 1050);
 
 private static final PointData POPUP_DISMISS_MIN_VALUE = new PointData(10, 100);
@@ -41,7 +45,16 @@ public DailyMissionRoutine(AccountDescriptor profile, TpDailyTaskEnum dailyMissi
 		hydrateTaskConfiguration();
 		reachDailyMissions();
 		switchToDailyMissionsTabFlow();
-		redeemAllRewards();
+		boolean completedNormally = redeemAllRewards();
+		if (!completedNormally) {
+			dismissInterface();
+			LocalDateTime retryAt = LocalDateTime.now().plusMinutes(INDIVIDUAL_CLAIM_LIMIT_RESCHEDULE_MINUTES);
+			reschedule(retryAt);
+			logWarning(routineLogDailyMissionLine("Stopped repeated individual-claim loop after "
+					+ INDIVIDUAL_CLAIM_MAX_REPETITIONS + " attempts. Rescheduled for: "
+					+ retryAt.format(DATETIME_FORMATTER)));
+			return;
+		}
 		StatisticsService.obtain().addToCounter(profile, "Daily Missions Claimed", 1);
 		dismissInterface();
 
@@ -94,13 +107,19 @@ private LocalDateTime queueFinalCheckBeforeReset(LocalDateTime gameReset) {
 		return finalCheck;
 	}
 
-private void redeemRewardsIndividually() {
+private boolean redeemRewardsIndividually() {
 		logWarning(routineLogDailyMissionLine("'Claim All' button not detected. Collecting missions individually"));
 
 		ImageSearchResultData claimResult;
 		int claimedCount = 0;
 
 		while ((claimResult = seekForIndividualClaimButton()).isFound()) {
+			if (claimedCount >= INDIVIDUAL_CLAIM_MAX_REPETITIONS) {
+				logWarning(routineLogDailyMissionLine("Detected repeated individual claim button without convergence. "
+						+ "Stopping after " + INDIVIDUAL_CLAIM_MAX_REPETITIONS + " repetitions."));
+				return false;
+			}
+
 			claimedCount++;
 			logDebug(routineLogDailyMissionLine("Collecting individual reward #" + claimedCount));
 
@@ -111,6 +130,7 @@ private void redeemRewardsIndividually() {
 		}
 
 		logInfo(routineLogDailyMissionLine("Individual collecting complete. Claimed " + claimedCount + " rewards"));
+		return true;
 	}
 
 private void hydrateTaskConfiguration() {
@@ -178,15 +198,16 @@ private LocalDateTime queueAtOffsetTime(LocalDateTime proposedTime, LocalDateTim
 		return proposedTime;
 	}
 
-private void redeemAllRewards() {
+private boolean redeemAllRewards() {
 		logInfo(routineLogDailyMissionLine("Scanning for claim buttons"));
 
 		ImageSearchResultData claimAllResult = seekForClaimAllButton();
 
 		if (claimAllResult.isFound()) {
 			redeemAllRewardsAtOnce(claimAllResult);
+			return true;
 		} else {
-			redeemRewardsIndividually();
+			return redeemRewardsIndividually();
 		}
 	}
 

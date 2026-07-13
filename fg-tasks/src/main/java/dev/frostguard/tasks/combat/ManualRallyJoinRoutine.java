@@ -18,6 +18,8 @@ import java.util.List;
 
 public class ManualRallyJoinRoutine extends DelayedTask {
 
+private static final int DEFAULT_TOTAL_MARCHES = 6;
+
 public ManualRallyJoinRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         super(profile, tpTask);
     }
@@ -45,6 +47,18 @@ public ManualRallyJoinRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask)
 
             Integer marchesConfig = profile.getConfig(ConfigurationKeyEnum.RALLY_MARCHES_INT, Integer.class);
             int maxMarches = (marchesConfig != null) ? marchesConfig : 1;
+            maxMarches = Math.max(1, Math.min(6, maxMarches));
+            int initDetectedTotal = resolveInitDetectedTotalMarches();
+            if (maxMarches > initDetectedTotal) {
+                int previous = maxMarches;
+                maxMarches = initDetectedTotal;
+                profile.setConfig(ConfigurationKeyEnum.RALLY_MARCHES_INT, maxMarches);
+                setShouldUpdateConfig(true);
+                logWarning(routineLogManualRallyJoinLine("Configured rally marches (" + previous
+                        + ") exceed init-detected total marches (" + initDetectedTotal
+                        + "). Corrected GUI value (" + ConfigurationKeyEnum.RALLY_MARCHES_INT
+                        + ") to " + maxMarches + "."));
+            }
             int deployedCount = ManualRallyJoinPreemptionRule.getActiveDeploymentsCount(profile.getId());
 
             logInfo(routineLogManualRallyJoinLine("Entering deploy loop - will deploy up to " + maxMarches + " marches..."));
@@ -212,6 +226,15 @@ public ManualRallyJoinRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask)
 
 
         reschedule(LocalDateTime.now().plusYears(100));
+    }
+
+    private int resolveInitDetectedTotalMarches() {
+        Integer initDetected = profile.getConfig(ConfigurationKeyEnum.INIT_DETECTED_TOTAL_MARCHES_INT, Integer.class);
+        if (initDetected == null) {
+            initDetected = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, Integer.class);
+        }
+        int normalized = initDetected != null ? initDetected : DEFAULT_TOTAL_MARCHES;
+        return Math.max(1, Math.min(6, normalized));
     }
 
 private String routineLogManualRallyJoinLine(String note) {

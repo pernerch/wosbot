@@ -15,6 +15,7 @@ import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.RawImageData;
 import dev.frostguard.api.domain.TesseractSettingsData;
+import dev.frostguard.api.configs.OcrDebugContext;
 import dev.frostguard.api.configs.OcrDebugImageWriter;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
@@ -62,6 +63,9 @@ private static final long ORDER_SCREEN_OPEN_WAIT_MS = 1800L;
 private static final AreaData CHIEF_ORDER_SCREEN_AREA = new AreaData(
 	new PointData(407, 208),
 	new PointData(587, 428));
+private static final AreaData CHIEF_ORDER_SCREEN_AREA_FALLBACK = new AreaData(
+	new PointData(330, 180),
+	new PointData(670, 520));
 private static final PointData COOLDOWN_STATUS_TOP_LEFT = new PointData(399, 897);
 private static final PointData COOLDOWN_STATUS_BOTTOM_RIGHT = new PointData(527, 946);
 private static final Pattern COOLDOWN_TIMER_PATTERN = Pattern.compile("(\\d{1,2}:\\d{2}:\\d{2})");
@@ -178,14 +182,7 @@ private boolean enactOrderFlow() {
 
 		logInfo(routineLogChiefOrderLine("Scanning for Chief Order Enact button"));
 
-		ImageSearchResultData enactButton = templateSearchHelper.locatePattern(
-				TemplatesEnum.CHIEF_ORDER_ENACT_BUTTON,
-				SearchConfig.builder()
-						.withArea(CHIEF_ORDER_SCREEN_AREA)
-						.withMaxAttempts(1)
-						.withThreshold(90)
-						.withDelay(200L)
-						.build());
+		ImageSearchResultData enactButton = locateChiefOrderEnactButton();
 
 		if (!enactButton.isFound()) {
 			logWarning(routineLogChiefOrderLine("Chief Order Enact button not detected"));
@@ -203,6 +200,42 @@ private boolean enactOrderFlow() {
 
 		logInfo(routineLogChiefOrderLine(chiefOrderType.getDescription() + " activated finished cleanly"));
 		return true;
+	}
+
+private ImageSearchResultData locateChiefOrderEnactButton() {
+		ImageSearchResultData strictAreaMatch = templateSearchHelper.locatePattern(
+				TemplatesEnum.CHIEF_ORDER_ENACT_BUTTON,
+				SearchConfig.builder()
+						.withArea(CHIEF_ORDER_SCREEN_AREA)
+						.withMaxAttempts(2)
+						.withThreshold(90)
+						.withDelay(250L)
+						.build());
+		if (strictAreaMatch.isFound()) {
+			return strictAreaMatch;
+		}
+
+		logDebug(routineLogChiefOrderLine("Enact button not found in strict area; trying fallback area search"));
+		ImageSearchResultData fallbackAreaMatch = templateSearchHelper.locatePattern(
+				TemplatesEnum.CHIEF_ORDER_ENACT_BUTTON,
+				SearchConfig.builder()
+						.withArea(CHIEF_ORDER_SCREEN_AREA_FALLBACK)
+						.withMaxAttempts(3)
+						.withThreshold(86)
+						.withDelay(300L)
+						.build());
+		if (fallbackAreaMatch.isFound()) {
+			return fallbackAreaMatch;
+		}
+
+		logDebug(routineLogChiefOrderLine("Enact button still not found; trying global fallback search"));
+		return templateSearchHelper.locatePattern(
+				TemplatesEnum.CHIEF_ORDER_ENACT_BUTTON,
+				SearchConfig.builder()
+						.withMaxAttempts(2)
+						.withThreshold(84)
+						.withDelay(300L)
+						.build());
 	}
 
 private boolean scheduleFromCooldownStatusIfPresent() {
@@ -348,8 +381,11 @@ private void dumpCooldownOcrRegionImage(int attemptNumber, long eventTimestamp) 
 			}
 
 			BufferedImage crop = fullImage.getSubimage(left, top, right - left, bottom - top);
+			String contextToken = OcrDebugContext.getContextToken();
+			String prefix = "ocr-reading-" + contextToken + "-cooldown-"
+					+ left + "_" + top + "_" + (right - left) + "_" + (bottom - top);
 			OcrDebugImageWriter.saveDebugImage(crop,
-					"chief-order-cooldown-" + profile.getName().replaceAll("[^a-zA-Z0-9._-]", "_"),
+					prefix,
 					eventTimestamp,
 					attemptNumber);
 		} catch (Exception ex) {

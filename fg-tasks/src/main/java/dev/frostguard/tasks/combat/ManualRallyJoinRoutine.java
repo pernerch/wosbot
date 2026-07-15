@@ -22,6 +22,11 @@ import java.util.List;
 public class ManualRallyJoinRoutine extends DelayedTask {
 
 private static final int DEFAULT_TOTAL_MARCHES = 6;
+    
+    // Color detection constants for join button state verification
+    private static final java.awt.Color JOIN_BUTTON_GREEN = new java.awt.Color(76, 175, 80); // RGB for green
+    private static final int JOIN_BUTTON_GREEN_TOLERANCE = 40; // Tolerance for green color detection
+    private static final int MIN_JOIN_BUTTON_GREEN_PIXELS = 5; // Minimum green pixels to confirm join button availability
 
 public ManualRallyJoinRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         super(profile, tpTask);

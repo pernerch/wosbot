@@ -4,8 +4,8 @@ import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.api.domain.AreaData;
 import dev.frostguard.api.domain.ImageSearchResultData;
+import dev.frostguard.api.domain.MarchResourceType;
 import dev.frostguard.api.domain.MarchSlotState;
-import dev.frostguard.api.domain.MarchSlotStatus;
 import dev.frostguard.api.domain.RawImageData;
 import dev.frostguard.engine.emulator.EmulatorController;
 import dev.frostguard.engine.nav.CommonGameAreas;
@@ -37,11 +37,13 @@ public class MarchHelper {
     // "Idle" measures ~145 white pixels, a countdown ~255-285, so the gap is wide. Orange "Unlock"
     // (~260) and red "Unavailable" (~565) never overlap white; stationed rows have no status line.
     private static final int COLOUR_PRESENT_MIN = 60;
-    private static final int IDLE_WHITE_MAX = 200;
     // Gather icons sit on a green disc (~1000-1200 green pixels); every other icon has none.
-    private static final int GATHER_ICON_GREEN_MIN = 300;
     // The returning icon self-matches at 100%; the next closest icon reaches only ~68%.
     private static final double RETURNING_ICON_THRESHOLD = 85;
+    private static final double STATUS_TEXT_THRESHOLD = 90;
+    private static final double ACTIVITY_ICON_THRESHOLD = 85;
+    // A non-gather row icon still contributes enough non-background colour to prove the row is not idle.
+    private static final int ICON_PRESENT_MIN = 500;
 
     private final EmulatorController emu;
     private final String device;
@@ -79,7 +81,11 @@ public class MarchHelper {
             }
             log.info("March queue: " + slots.stream()
                     .map(slot -> "#" + slot.slot() + "=" + slot.status()
-                            + (slot.countdown() == null ? "" : "(" + slot.countdown() + ")"))
+                            + "/" + slot.activityType()
+                            + "/" + slot.movementPhase()
+                            + (slot.resourceType() == null ? "" : "/" + slot.resourceType())
+                            + (slot.countdown() == null ? "" : "(" + slot.countdown() + ")")
+                            + (slot.evidence() == null ? "" : "{" + slot.evidence() + "}"))
                     .collect(Collectors.joining(" ")));
             return slots;
         } catch (Exception ex) {
@@ -93,30 +99,79 @@ public class MarchHelper {
     private MarchSlotState readSlot(RawImageData frame, BufferedImage image, int index) {
         int slot = index + 1;
         AreaData status = CommonGameAreas.MARCH_QUEUE_STATUS[index];
-
-        if (PixelStats.count(image, status, GameColors::isActionOrange) >= COLOUR_PRESENT_MIN
-                || PixelStats.count(image, status, GameColors::isBlockedRed) >= COLOUR_PRESENT_MIN)
-            return MarchSlotState.of(slot, MarchSlotStatus.LOCKED);
-
-        int white = PixelStats.count(image, status, GameColors::isLabelWhite);
-        if (white < COLOUR_PRESENT_MIN)
-            return MarchSlotState.of(slot, MarchSlotStatus.STATIONED);
-        if (white < IDLE_WHITE_MAX)
-            return MarchSlotState.of(slot, MarchSlotStatus.IDLE);
-
-        // A countdown is roughly twice as many white pixels as the word "Idle"; read it.
-        Duration countdown = readCountdown(index);
-        if (countdown == null)
-            return MarchSlotState.of(slot, MarchSlotStatus.BUSY_UNKNOWN);
-
+        AreaData title = CommonGameAreas.MARCH_QUEUE_TITLE[index];
         AreaData icon = CommonGameAreas.MARCH_QUEUE_ICON[index];
-        if (PixelStats.count(image, icon, GameColors::isVividGreen) >= GATHER_ICON_GREEN_MIN)
-            return new MarchSlotState(slot, MarchSlotStatus.GATHERING, countdown);
-        if (emu.locatePattern(device, frame, TemplatesEnum.MARCH_QUEUE_RETURNING_ICON,
-                icon.topLeft(), icon.bottomRight(), RETURNING_ICON_THRESHOLD).isFound())
-            return new MarchSlotState(slot, MarchSlotStatus.RETURNING, countdown);
 
-        return new MarchSlotState(slot, MarchSlotStatus.BUSY_UNKNOWN, countdown);
+        int orange = PixelStats.count(image, status, GameColors::isActionOrange);
+        int red = PixelStats.count(image, status, GameColors::isBlockedRed);
+        int white = PixelStats.count(image, status, GameColors::isLabelWhite);
+        int gatherGreen = PixelStats.count(image, icon, GameColors::isVividGreen);
+        int iconColour = PixelStats.count(image, icon, pixel -> GameColors.isLabelWhite(pixel)
+                || GameColors.isVividGreen(pixel)
+                || GameColors.isActionOrange(pixel)
+                || GameColors.isBlockedRed(pixel)
+                || GameColors.isMarchQueueIconBlue(pixel));
+        boolean returning = emu.locatePattern(device, frame, TemplatesEnum.MARCH_QUEUE_RETURNING_ICON,
+                icon.topLeft(), icon.bottomRight(), RETURNING_ICON_THRESHOLD).isFound();
+        boolean rally = matchesActivityIcon(frame, icon, TemplatesEnum.MARCH_QUEUE_RALLY_ICON);
+        boolean attackIcon = matchesActivityIcon(frame, icon, TemplatesEnum.MARCH_QUEUE_ATTACK_ICON);
+        boolean encampment = matchesActivityIcon(frame, icon, TemplatesEnum.MARCH_QUEUE_ENCAMPMENT_ICON);
+        boolean reinforcement = matchesActivityIcon(frame, icon, TemplatesEnum.MARCH_QUEUE_REINFORCEMENT_ICON);
+        boolean garrisoned = matchesActivityIcon(frame, icon, TemplatesEnum.MARCH_QUEUE_GARRISONED_ICON);
+        boolean slotFlag = emu.locatePattern(device, frame, TemplatesEnum.MARCH_QUEUE_SLOT_FLAG_ICON,
+                icon.topLeft(), icon.bottomRight(), RETURNING_ICON_THRESHOLD).isFound();
+        boolean idleText = matchesStatus(frame, status, TemplatesEnum.MARCH_QUEUE_STATUS_IDLE);
+        boolean unlockText = matchesStatus(frame, status, TemplatesEnum.MARCH_QUEUE_STATUS_UNLOCK);
+        boolean unavailableText = matchesStatus(frame, status, TemplatesEnum.MARCH_QUEUE_STATUS_UNAVAILABLE);
+        boolean goToText = matchesTitle(frame, title, TemplatesEnum.MARCH_QUEUE_TEXT_GO_TO);
+        boolean gatheringText = matchesTitle(frame, title, TemplatesEnum.MARCH_QUEUE_TEXT_GATHERING);
+        boolean attackText = matchesTitle(frame, title, TemplatesEnum.MARCH_QUEUE_TEXT_ATTACK);
+        boolean terminalStatus = idleText || unlockText || unavailableText
+                || orange >= COLOUR_PRESENT_MIN || red >= COLOUR_PRESENT_MIN;
+        Duration countdown = !terminalStatus && white >= COLOUR_PRESENT_MIN ? readCountdown(index) : null;
+        MarchResourceType resourceType = detectGatherResource(frame, icon);
+        boolean activityIconPresent = iconColour >= ICON_PRESENT_MIN && !slotFlag;
+
+        return MarchQueueSlotClassifier.classify(new MarchQueueSlotClassifier.Signals(
+                slot, orange, red, white, gatherGreen, returning, rally, attackIcon, encampment, reinforcement,
+                garrisoned,
+                idleText, unlockText, unavailableText, goToText, gatheringText, attackText,
+                activityIconPresent, countdown, resourceType));
+    }
+
+    private boolean matchesStatus(RawImageData frame, AreaData status, TemplatesEnum template) {
+        return emu.locatePattern(device, frame, template, status.topLeft(), status.bottomRight(),
+                STATUS_TEXT_THRESHOLD).isFound();
+    }
+
+    private boolean matchesTitle(RawImageData frame, AreaData title, TemplatesEnum template) {
+        return emu.locatePattern(device, frame, template, title.topLeft(), title.bottomRight(),
+                STATUS_TEXT_THRESHOLD).isFound();
+    }
+
+    private MarchResourceType detectGatherResource(RawImageData frame, AreaData icon) {
+        if (matchesResource(frame, icon, TemplatesEnum.MARCH_QUEUE_MEAT_ICON)) {
+            return MarchResourceType.MEAT;
+        }
+        if (matchesResource(frame, icon, TemplatesEnum.MARCH_QUEUE_WOOD_ICON)) {
+            return MarchResourceType.WOOD;
+        }
+        if (matchesResource(frame, icon, TemplatesEnum.MARCH_QUEUE_COAL_ICON)) {
+            return MarchResourceType.COAL;
+        }
+        if (matchesResource(frame, icon, TemplatesEnum.MARCH_QUEUE_IRON_ICON)) {
+            return MarchResourceType.IRON;
+        }
+        return MarchResourceType.UNKNOWN;
+    }
+
+    private boolean matchesResource(RawImageData frame, AreaData icon, TemplatesEnum template) {
+        return emu.locatePattern(device, frame, template, icon.topLeft(), icon.bottomRight(), 80).isFound();
+    }
+
+    private boolean matchesActivityIcon(RawImageData frame, AreaData icon, TemplatesEnum template) {
+        return emu.locatePattern(device, frame, template, icon.topLeft(), icon.bottomRight(),
+                ACTIVITY_ICON_THRESHOLD).isFound();
     }
 
     private Duration readCountdown(int index) {

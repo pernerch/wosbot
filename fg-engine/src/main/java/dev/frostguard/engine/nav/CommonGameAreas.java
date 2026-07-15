@@ -30,7 +30,7 @@ public final class CommonGameAreas {
 
     // ── side panel navigation ────────────────────────────────────────
 
-    public static final AreaData LEFT_MENU_TRIGGER        = region(8, 538, 8, 560);
+    public static final AreaData LEFT_MENU_TRIGGER        = region(1, 538, 3, 560);
     public static final AreaData LEFT_MENU_CITY_TAB       = region(100, 270, 120, 270);
     public static final AreaData LEFT_MENU_WILDERNESS_TAB = region(320, 270, 340, 270);
     public static final PointData LEFT_MENU_CLOSE_CITY    = point(110, 270);
@@ -58,6 +58,7 @@ public final class CommonGameAreas {
 
     public static final AreaData[] MARCH_QUEUE_STATUS = marchQueueRows(150, 0, 300, 28);
     public static final AreaData[] MARCH_QUEUE_TIMER  = marchQueueRows(152, 3, 292, 22);
+    public static final AreaData[] MARCH_QUEUE_TITLE  = marchQueueRows(70, -29, 340, -1);
     // padded past the 46x46 icon so template matching has room to slide
     public static final AreaData[] MARCH_QUEUE_ICON   = marchQueueRows(18, -27, 72, 27);
 

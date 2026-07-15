@@ -34,6 +34,11 @@ public class EmulatorController {
 
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition     cond = lock.newCondition();
+    // Serializes emulator boots across profile threads. Multiple InitializeRoutine/SkipTutorialRoutine
+    // threads can reach launchEmulator() at the same time; booting 3+ instances concurrently spikes
+    // host CPU/RAM/IO and causes random freezes. This lock guarantees one boot at a time, followed by
+    // a configurable settle delay before the next launch is permitted.
+    private final ReentrantLock emulatorLaunchLock = new ReentrantLock();
     private final PriorityQueue<QueuedEmulatorTask> queue   = new PriorityQueue<>();
     private final Set<Thread>        slots        = new HashSet<>();
     private final Map<String,Thread> dev2thread   = new HashMap<>();
@@ -122,7 +127,39 @@ public class EmulatorController {
     // --- app management (direct delegates) ---
 
     public boolean isGameInstalled(String i)              { requireBackend(); return backend.isAppInstalled(i, GAME.getPackageName()); }
-    public void    launchEmulator(String i)               { requireBackend(); backend.launchEmulator(i); }
+
+    /**
+     * Launches an emulator instance, serializing concurrent boots.
+     *
+     * <p>Only one emulator may boot at a time across all profile threads. After a successful
+     * launch request the caller holds the launch lock for an additional settle delay
+     * ({@link ConfigurationKeyEnum#EMULATOR_LAUNCH_DELAY_MS_INT}, default 30s) so the next
+     * emulator does not start until the current one has finished its most resource-intensive
+     * boot phase. This prevents the host freezes observed when launching 3+ instances at once,
+     * both at initial startup and when idle instances are recycled.
+     */
+    public void launchEmulator(String i) {
+        requireBackend();
+        emulatorLaunchLock.lock();
+        try {
+            LOG.info("{} acquired emulator launch lock (dev {})", label(i), i);
+            backend.launchEmulator(i);
+
+            long delayMs = readLaunchDelayMs();
+            if (delayMs > 0) {
+                LOG.info("Waiting {} ms before allowing another emulator launch...", delayMs);
+                Thread.sleep(delayMs);
+            }
+        } catch (InterruptedException e) {
+            // Preserve interrupt status so cooperative task cancellation still works.
+            Thread.currentThread().interrupt();
+            LOG.warn("Emulator launch wait interrupted for dev {}", i);
+        } finally {
+            emulatorLaunchLock.unlock();
+            LOG.info("{} released emulator launch lock (dev {})", label(i), i);
+        }
+    }
+
     public void    closeEmulator(String i)                { requireBackend(); backend.closeEmulator(i); backend.invalidateAllCaches(i); }
     public void    launchApp(String i, String pkg)        { requireBackend(); backend.launchApp(i, pkg); }
     public void    sendGameToBackground(String i)         { requireBackend(); backend.sendGameToBackground(i); }
@@ -164,6 +201,24 @@ public class EmulatorController {
     }
     public ImageSearchResultData locatePattern(String idx, RawImageData frame, TemplatesEnum t, double th) {
         return locatePattern(idx, frame, t, ORIGIN, FULL, th);
+    }
+
+    public ImageSearchResultData locatePatternMultiScale(String idx, RawImageData frame,
+            TemplatesEnum t, PointData tl, PointData br, double th) {
+        requireBackend();
+        try { OpenCvPatternLocator.setContextLabel(label(idx));
+              return OpenCvPatternLocator.locatePatternMultiScale(frame, regionTpl(t.getTemplate()), tl, br, th);
+        } finally { OpenCvPatternLocator.clearContextLabel(); }
+    }
+    public ImageSearchResultData locatePatternMultiScale(String idx, TemplatesEnum t,
+            PointData tl, PointData br, double th) {
+        return locatePatternMultiScale(idx, captureScreen(idx), t, tl, br, th);
+    }
+    public ImageSearchResultData locatePatternMultiScale(String idx, TemplatesEnum t, double th) {
+        return locatePatternMultiScale(idx, captureScreen(idx), t, ORIGIN, FULL, th);
+    }
+    public ImageSearchResultData locatePatternMultiScale(String idx, RawImageData frame, TemplatesEnum t, double th) {
+        return locatePatternMultiScale(idx, frame, t, ORIGIN, FULL, th);
     }
 
     public ImageSearchResultData locatePatternMono(String idx, TemplatesEnum t,
@@ -349,6 +404,19 @@ public class EmulatorController {
                 .map(c -> c.get(ConfigurationKeyEnum.PROFILE_SWITCH_COOLDOWN_MS_INT.name()))
                 .map(Long::parseLong)
                 .orElse(Long.parseLong(ConfigurationKeyEnum.PROFILE_SWITCH_COOLDOWN_MS_INT.getDefaultValue()));
+    }
+
+    private long readLaunchDelayMs() {
+        try {
+            return Optional.ofNullable(ConfigService.obtain().loadGlobalSettings())
+                    .map(c -> c.get(ConfigurationKeyEnum.EMULATOR_LAUNCH_DELAY_MS_INT.name()))
+                    .map(Long::parseLong)
+                    .orElse(Long.parseLong(ConfigurationKeyEnum.EMULATOR_LAUNCH_DELAY_MS_INT.getDefaultValue()));
+        } catch (NumberFormatException e) {
+            long fallback = Long.parseLong(ConfigurationKeyEnum.EMULATOR_LAUNCH_DELAY_MS_INT.getDefaultValue());
+            LOG.warn("Invalid emulator launch delay config, using default {} ms", fallback);
+            return fallback;
+        }
     }
 
     private String label(String idx) {

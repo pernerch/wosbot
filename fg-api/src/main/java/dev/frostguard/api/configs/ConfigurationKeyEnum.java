@@ -90,6 +90,7 @@ public enum ConfigurationKeyEnum {
     RESEARCH_ECONOMY_BOOL                       ("false",   Boolean.class,  ConfigCategory.CITY),
     RESEARCH_ENABLED_BOOL                       ("false",   Boolean.class,  ConfigCategory.CITY),
     RESEARCH_GROWTH_BOOL                        ("false",   Boolean.class,  ConfigCategory.CITY),
+    RESEARCH_PRIORITIES_STRING                  ("growth:Growth:1:true|economy:Economy:2:true|battle:Battle:3:true", String.class, ConfigCategory.CITY),
 
     /* ─────────── dailies ─────────── */
 
@@ -206,6 +207,8 @@ public enum ConfigurationKeyEnum {
     GATHER_IRON_LEVEL_INT           ("8",                   Integer.class,  ConfigCategory.GATHERING),
     GATHER_MEAT_BOOL                ("false",               Boolean.class,  ConfigCategory.GATHERING),
     GATHER_MEAT_LEVEL_INT           ("8",                   Integer.class,  ConfigCategory.GATHERING),
+    GATHER_ONLY_FULL_RESOURCES_BOOL ("false",               Boolean.class,  ConfigCategory.GATHERING),
+    GATHER_DOWNGRADE_LEVEL_BOOL     ("true",                Boolean.class,  ConfigCategory.GATHERING),
     GATHER_REMOVE_HEROS_BOOL        ("true",                Boolean.class,  ConfigCategory.GATHERING),
     GATHER_ROTATION_POOL            ("",                    String.class,   ConfigCategory.GATHERING),
     // pernerch/2026-07-02: timestamp of the last gather recall (Intel/Bear), stored per-profile task instance
@@ -274,6 +277,9 @@ public enum ConfigurationKeyEnum {
     LDPLAYER_PATH_STRING                ("",            String.class,   ConfigCategory.SYSTEM),
     MAX_IDLE_TIME_INT                   ("15",          Integer.class,  ConfigCategory.SYSTEM),
     MAX_RUNNING_EMULATORS_INT           ("1",           Integer.class,  ConfigCategory.SYSTEM),
+    // Added by Shederator | Why: serialize concurrent emulator boots to avoid host freezes when
+    // launching 3+ instances at once. Delay (ms) enforced between consecutive emulator launches.
+    EMULATOR_LAUNCH_DELAY_MS_INT        ("30000",       Integer.class,  ConfigCategory.SYSTEM),
     MEMU_PATH_STRING                    ("",            String.class,   ConfigCategory.SYSTEM),
     MUMU_PATH_STRING                    ("C:\\Program Files\\Netease\\MuMuPlayer\\nx_main", String.class, ConfigCategory.SYSTEM),
     PROFILE_SWITCH_COOLDOWN_MS_INT      ("10000",       Integer.class,  ConfigCategory.SYSTEM),

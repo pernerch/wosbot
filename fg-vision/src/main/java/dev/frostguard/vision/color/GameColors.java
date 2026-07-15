@@ -32,6 +32,11 @@ public final class GameColors {
         return green(rgb) > 110 && green(rgb) > red(rgb) + 30 && green(rgb) > blue(rgb) + 30;
     }
 
+    /** Blue circular march-queue activity icons such as stationed, attack, and rally rows. */
+    public static boolean isMarchQueueIconBlue(int rgb) {
+        return blue(rgb) > 150 && green(rgb) > 90 && red(rgb) < 120;
+    }
+
     /** Green arena power text, indicating a weaker opponent. */
     public static boolean isArenaPowerGreen(int rgb) {
         return green(rgb) > Math.max(red(rgb), blue(rgb)) * 1.2 && green(rgb) > 100;

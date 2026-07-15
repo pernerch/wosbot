@@ -45,8 +45,6 @@ public class GatherRoutine extends DelayedTask {
 
     // ========== Constants & Config Keys ==========
     private static final int DEFAULT_QUEUES = 6;
-    private static final int MIN_QUEUE_LIMIT = 1;
-    private static final int MAX_QUEUE_LIMIT = 6;
     private static final int DEFAULT_LEVEL = 5;
     private static final boolean DEFAULT_REMOVE_HEROES = false;
     private static final boolean DEFAULT_INTEL_SMART = false;
@@ -57,8 +55,6 @@ public class GatherRoutine extends DelayedTask {
     private static final int TROOP_RETURN_MARGIN_MINUTES = 2;
     // pernerch/2026-07-02: retry interval when recalled troops are still marching home
     private static final int TROOP_RETURN_RETRY_MINUTES = 1;
-    // pernerch/2026-07-08: gather balance correction waits long enough for outbound marches to settle.
-    private static final int GATHER_BALANCE_CORRECTION_DELAY_MINUTES = 10;
     // pernerch/2026-07-02: Bear Trap active duration (30 min) used to estimate end time for defer calculation
     private static final int BEAR_TRAP_DURATION_MINUTES = 30;
 
@@ -230,17 +226,6 @@ public class GatherRoutine extends DelayedTask {
         // 2. Fill Queues (Persistent Rotation)
         fillQueues(activeCount, activeMarches);
 
-        if (enabledTypes.size() != activeQueues) {
-            LocalDateTime balanceCheckAt = LocalDateTime.now().plusMinutes(GATHER_BALANCE_CORRECTION_DELAY_MINUTES);
-            updateReschedule(balanceCheckAt);
-            logInfo(String.format(
-                "Gather resource balance will be rechecked in %d minutes at %s (enabled resources=%d, usable queues=%d).",
-                GATHER_BALANCE_CORRECTION_DELAY_MINUTES,
-                GameTimeUtils.formatCountdown(balanceCheckAt),
-                enabledTypes.size(),
-                activeQueues));
-        }
-
         // 3. Save & Finalize
         finalizeReschedule();
     }
@@ -249,31 +234,8 @@ public class GatherRoutine extends DelayedTask {
 
     private void loadConfig() {
         // Changed by pernerch | Date: 2026-07-02 | Why: centralize queue limit via policy for consistent hard-cap behavior.
-        int configuredQueueLimit = GatherQueuePolicy.resolveActiveQueueLimit(
-            get(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, DEFAULT_QUEUES));
-        int detectedUsableSlots = marchHelper.detectUsableMarchSlots();
-        int initDetectedTotal = resolveInitDetectedTotalMarches();
-        int correctedQueueLimit = Math.min(configuredQueueLimit, initDetectedTotal);
-
-        if (correctedQueueLimit != configuredQueueLimit) {
-            profile.setConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, correctedQueueLimit);
-            setShouldUpdateConfig(true);
-            logWarning(String.format(
-                "Configured gather queues (%d) exceed init-detected total marches (%d). Corrected GUI value (%s) to %d.",
-                configuredQueueLimit,
-                initDetectedTotal,
-                ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT,
-                correctedQueueLimit));
-        }
-
-        this.activeQueues = correctedQueueLimit;
-
-        logInfo(String.format(
-            "Gather queue capacity resolved from profile: configured=%d, initDetectedTotal=%d, detectedUsable=%d, effective=%d",
-            configuredQueueLimit,
-            initDetectedTotal,
-            detectedUsableSlots,
-            this.activeQueues));
+        this.activeQueues = GatherQueuePolicy.resolveActiveQueueLimit(
+                get(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, DEFAULT_QUEUES));
         this.removeHeroes = get(ConfigurationKeyEnum.GATHER_REMOVE_HEROS_BOOL, DEFAULT_REMOVE_HEROES);
         this.intelSmart = get(ConfigurationKeyEnum.INTEL_SMART_PROCESSING_BOOL, DEFAULT_INTEL_SMART);
         this.intelRecall = get(ConfigurationKeyEnum.INTEL_RECALL_GATHER_TROOPS_BOOL, false);
@@ -286,6 +248,10 @@ public class GatherRoutine extends DelayedTask {
                 .collect(Collectors.toList());
 
         loadRotationPool();
+        if (rotationPool != null) {
+            rotationPool.retainAll(enabledTypes);
+            saveRotationPool(); // Ensure consistent state
+        }
 
         this.textHelper = new ResilientOcrExecutor<>(provider);
         this.earliestReschedule = null;
@@ -295,15 +261,6 @@ public class GatherRoutine extends DelayedTask {
             try { this.lastRecallTime = LocalDateTime.parse(recallTimeStr); }
             catch (Exception ignored) { this.lastRecallTime = null; }
         }
-    }
-
-    private int resolveInitDetectedTotalMarches() {
-        Integer initDetected = profile.getConfig(ConfigurationKeyEnum.INIT_DETECTED_TOTAL_MARCHES_INT, Integer.class);
-        if (initDetected == null) {
-            initDetected = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, Integer.class);
-        }
-        int normalized = initDetected != null ? initDetected : DEFAULT_QUEUES;
-        return Math.max(MIN_QUEUE_LIMIT, Math.min(MAX_QUEUE_LIMIT, normalized));
     }
 
     private boolean isTypeEnabled(GatherType type) {
@@ -328,13 +285,11 @@ public class GatherRoutine extends DelayedTask {
             saveRotationPool();
         }
 
-        // If pool is empty after removing active marches, preserve the completed cycle.
+        // If pool is empty after removing active marches but there are free slots,
+        // allow duplicate types so we can fill all available march queues
         if (rotationPool.isEmpty() && freeSlots > 0) {
-            logInfo("Pool empty after removing active marches. No duplicate gather marches will be sent in this cycle.");
-            if (activeMarches.isEmpty()) {
-                rotationPool = new ArrayList<>(enabledTypes);
-                logInfo("No active gather marches detected with an empty pool. Starting a new gather rotation cycle.");
-            }
+            logInfo("Pool empty after removing active marches. Allowing duplicates for remaining slots.");
+            rotationPool = new ArrayList<>(enabledTypes);
         }
 
         if (freeSlots <= 0) {
@@ -342,15 +297,21 @@ public class GatherRoutine extends DelayedTask {
             return;
         }
 
+        // Shuffle loaded pool for randomness in this run
+        Collections.shuffle(rotationPool);
+
         int remaining = freeSlots;
         int safetyLoop = 0;
 
         while (remaining > 0 && safetyLoop++ < 10) {
 
-            // Stop at the cycle boundary instead of refilling with duplicates.
+            // Refill if empty
             if (rotationPool.isEmpty()) {
-                logInfo("Pool empty. Preserving cycle boundary and stopping deployment for this run.");
-                break;
+                logInfo("Pool empty. Resetting.");
+                rotationPool = new ArrayList<>(enabledTypes);
+                // Don't remove active marches on refill â€” duplicates are needed
+                // to fill remaining slots when activeQueues > enabledTypes.size()
+                Collections.shuffle(rotationPool);
             }
 
             // Try ALL pool items â€” don't limit to remaining, so if one type fails
@@ -390,14 +351,9 @@ public class GatherRoutine extends DelayedTask {
     private void loadRotationPool() {
         String saved = profile.getConfig(ConfigurationKeyEnum.GATHER_ROTATION_POOL, String.class);
         logInfo("DEBUG: Loaded pool config: '" + saved + "'");
-        if (saved == null) {
+        if (saved == null || saved.isEmpty()) {
             rotationPool = new ArrayList<>(enabledTypes);
-            logInfo("DEBUG: Pool config missing. Resetting to full: " + rotationPool);
-            return;
-        }
-        if (saved.isEmpty()) {
-            rotationPool = new ArrayList<>();
-            logInfo("DEBUG: Pool config empty. Keeping cycle complete state until the next balance check.");
+            logInfo("DEBUG: Pool config empty/null. Resetting to full: " + rotationPool);
             return;
         }
         try {
@@ -405,7 +361,6 @@ public class GatherRoutine extends DelayedTask {
                     .map(String::trim)
                     .filter(s -> !s.isEmpty())
                     .map(GatherType::valueOf)
-                    .filter(enabledTypes::contains)
                     .collect(Collectors.toList());
         } catch (Exception e) {
             rotationPool = new ArrayList<>(enabledTypes);
@@ -456,7 +411,25 @@ public class GatherRoutine extends DelayedTask {
     // grid instead of searching shortcut templates in the left menu, so gather startup matches the
     // original slot-based behavior again.
     private int countOccupiedMarchSlotsFlow() {
-        return marchHelper.countOccupiedUsableMarchSlots();
+        marchHelper.openLeftMenuCitySection(false);
+        int occupied = 0;
+
+        try {
+            for (int i = 0; i < CommonGameAreas.MARCH_SLOTS_TOP_LEFT.length; i++) {
+                PointData topLeft = CommonGameAreas.MARCH_SLOTS_TOP_LEFT[i];
+                PointData bottomRight = CommonGameAreas.MARCH_SLOTS_BOTTOM_RIGHT[i];
+                String text = emuManager.readText(EMULATOR_NUMBER, topLeft, bottomRight);
+                if (text == null || !text.toLowerCase().contains("idle")) {
+                    occupied++;
+                }
+            }
+        } catch (IOException | TesseractException e) {
+            logDebug("Could not fully read occupied march slots: " + e.getMessage());
+        } finally {
+            marchHelper.closeLeftMenu();
+        }
+
+        return occupied;
     }
 
     // Changed by pernerch | Date: 2026-07-02 | Why: when autojoin is disabled and all gather
